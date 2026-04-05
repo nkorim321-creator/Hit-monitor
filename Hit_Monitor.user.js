@@ -1,9 +1,11 @@
 // ==UserScript==
-// @name        MTurk HIT Tracker v5.4 (Ultimate Action Memory)
+// @name        MTurk HIT Tracker (Ultimate Action Memory)
 // @namespace   https://worker.mturk.com/
-// @version     5.4
+// @version     5.5
 // @description Perfects Return/Submit tracking using LocalStorage intent memory to bypass React modals. Kills zombie timers.
 // @match       https://worker.mturk.com/*
+// @updateURL   https://hit-monitorv3.web.app/Hit_Monitor.user.js
+// @downloadURL https://hit-monitorv3.web.app/Hit_Monitor.user.js
 // @grant       GM_xmlhttpRequest
 // @grant       unsafeWindow
 // @connect     docs.google.com
@@ -24,7 +26,7 @@ const FS_BASE    = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/d
 function gmPatch(url, body) {
   return new Promise((resolve, reject) => {
     GM_xmlhttpRequest({
-      method:  "PATCH",
+      method: "PATCH",
       url,
       headers: { "Content-Type": "application/json" },
       data:    JSON.stringify(body),
@@ -356,7 +358,7 @@ async function authorize(workerId) {
   }
 }
 
-/* ── ZERO-LATENCY JSON QUEUE SCRAPER (Cache Buster Added) ── */
+/* ── ZERO-LATENCY JSON QUEUE SCRAPER (Empty-Queue Aware) ── */
 async function getQueueJSON() {
     try {
         const res = await fetch('https://worker.mturk.com/tasks.json?_=' + Date.now(), {
@@ -365,23 +367,39 @@ async function getQueueJSON() {
         });
 
         if (res.ok) {
-            const data = await res.json();
-            const tasks = data.tasks || data.assignments || data.results || [];
+            const text = await res.text();
+            try {
+                // Try to parse it as normal JSON
+                const data = JSON.parse(text);
+                const tasks = data.tasks || data.assignments || data.results || [];
 
-            return tasks.map(t => {
-                const proj = t.project || t;
-                const reqName = proj.requester_name || t.requester_name || "Unknown";
+                return tasks.map(t => {
+                    const proj = t.project || t;
+                    const reqName = proj.requester_name || t.requester_name || "Unknown";
 
-                return {
-                    assignmentId: t.assignment_id || t.task_id,
-                    requester: reqName,
-                    title: proj.title || "HIT",
-                    reward: parseFloat(proj.monetary_reward?.amount_in_dollars || proj.reward || 0),
-                    timeSecs: parseInt(t.time_to_deadline_in_seconds || proj.assignment_duration_in_seconds) || 3600
-                };
-            });
+                    return {
+                        assignmentId: t.assignment_id || t.task_id,
+                        requester: reqName,
+                        title: proj.title || "HIT",
+                        reward: parseFloat(proj.monetary_reward?.amount_in_dollars || proj.reward || 0),
+                        timeSecs: parseInt(t.time_to_deadline_in_seconds || proj.assignment_duration_in_seconds) || 3600
+                    };
+                });
+            } catch(parseErr) {
+                // If it fails to parse, check if MTurk returned the "Empty Queue" HTML instead
+                if (text.includes("You don't currently have any HITs accepted") || text.includes("Your HITs Queue (0)")) {
+                    return []; // Queue is officially empty, return empty array (NOT null)
+                }
+            }
         }
     } catch(e) {}
+
+    // Bulletproof DOM Fallback: Check the actual page text just in case the API was blocked
+    if (document.body && document.body.textContent.includes("You don't currently have any HITs accepted")) {
+        return [];
+    }
+
+    // If we reach here, it's a true network error. Safe to return null and pause syncing.
     return null;
 }
 
@@ -482,9 +500,14 @@ if (isQueue) {
   let { username, teamname } = authResult;
   setBadge(badge, "ok", `✅ ${username} | ${teamname}`);
 
-  // Maps Assignment ID -> Exact Expiration Timestamp
-  const knownHits = new Map();
+  // Maps Assignment ID -> Exact Expiration Timestamp (Persists across page loads)
+  const knownHits = new Map(JSON.parse(localStorage.getItem("mrp_known_hits") || "[]"));
   let   isSyncing = false;
+
+  // Helper to save memory to the browser
+  function saveKnownHits() {
+      localStorage.setItem("mrp_known_hits", JSON.stringify([...knownHits]));
+  }
 
   async function syncQueue() {
     if (isSyncing) return;
@@ -521,6 +544,7 @@ if (isQueue) {
                   }
               }
               knownHits.delete(oldId);
+              saveKnownHits(); // Save after removing vanished HIT
           }
       }
 
@@ -532,7 +556,11 @@ if (isQueue) {
       const pushPromises = hits.map(h => {
         const isNew = !knownHits.has(h.assignmentId);
         const expiresMs = now.getTime() + h.timeSecs * 1000;
-        knownHits.set(h.assignmentId, expiresMs);
+        
+        if (isNew) {
+            knownHits.set(h.assignmentId, expiresMs);
+            saveKnownHits(); // Save when a new HIT enters the queue
+        }
 
         const payload = {
           workerId, username, teamname,
