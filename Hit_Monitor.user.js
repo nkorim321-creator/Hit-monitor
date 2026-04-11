@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MTurk HIT Tracker (Ultimate Action Memory)
 // @namespace   https://worker.mturk.com/
-// @version     5.5
+// @version     5.6
 // @description Perfects Return/Submit tracking using LocalStorage intent memory to bypass React modals. Kills zombie timers.
 // @match       https://worker.mturk.com/*
 // @updateURL   https://hit-monitorv3.web.app/Hit_Monitor.user.js
@@ -437,6 +437,16 @@ function markIntent(id, type) {
     }
 }
  
+/* ── PERSISTENT KNOWN HITS (survives page navigation) ───── */
+const KNOWN_HITS_KEY = '__ht_known_hits__';
+
+function saveKnownHits(map) {
+    try {
+        const obj = {};
+        map.forEach((v, k) => { obj[k] = v; });
+        localStorage.setItem(KNOWN_HITS_KEY, JSON.stringify(obj));
+    } catch (e) {}
+}
 /* ── BULLETPROOF ACTION TRACKER (INTENT MEMORY SYSTEM) ──── */
  
 // FIX #4: Use a stack instead of a single variable so rapid clicks don't clobber each other
@@ -524,7 +534,17 @@ if (isQueue) {
  
   // FIX #2: Store the *absolute* expiry timestamp computed once at first sight,
   // so it never drifts on subsequent syncs.
-  const knownHits = new Map(); // assignmentId -> { expiresAtMs }
+  // SYNC FIX: Load persisted known HITs for cross-page vanish detection
+  const knownHits = new Map();
+  try {
+      const raw = localStorage.getItem(KNOWN_HITS_KEY);
+      if (raw) {
+          const now = Date.now();
+          for (const [k, v] of Object.entries(JSON.parse(raw))) {
+              if (v.expiresAtMs > now) knownHits.set(k, v);
+          }
+      }
+  } catch (e) {}
   let   isSyncing = false;
  
   // FIX #1: Use a cancellable timer reference so we can kill it on navigation
@@ -591,6 +611,12 @@ if (isQueue) {
       const pushPromises = hits.map(h => {
         const isNew = !knownHits.has(h.assignmentId);
  
+        // SYNC FIX: Don't overwrite status if user already submitted/returned this HIT
+        if (readIntent(h.assignmentId, "submit") || readIntent(h.assignmentId, "return")) {
+          if (isNew) knownHits.set(h.assignmentId, { expiresAtMs: h.expiresAtMs });
+          return Promise.resolve();
+        }
+
         // FIX #2: Only set the expiry on first encounter; reuse it on subsequent syncs
         if (isNew) {
           knownHits.set(h.assignmentId, { expiresAtMs: h.expiresAtMs });
@@ -617,6 +643,9 @@ if (isQueue) {
       });
  
       await Promise.all(pushPromises);
+
+      // Persist knownHits so vanish detection works across page navigations
+      saveKnownHits(knownHits);
  
     } catch (e) {
       console.error("Sync error", e);
