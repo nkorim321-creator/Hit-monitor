@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name        MTurk HIT Tracker (Ultimate Action Memory)
 // @namespace   https://worker.mturk.com/
-// @version     5.6
-// @description Perfects Return/Submit tracking using LocalStorage intent memory to bypass React modals. Kills zombie timers.
+// @version     5.7
+// @description Perfects Return/Submit tracking using LocalStorage intent memory. Optimized Firestore writes to reduce Firebase quota usage.
 // @match       https://worker.mturk.com/*
 // @updateURL   https://hit-monitorv3.web.app/Hit_Monitor.user.js
 // @downloadURL https://hit-monitorv3.web.app/Hit_Monitor.user.js
@@ -14,18 +14,17 @@
 // ==/UserScript==
 
 (async () => {
- 
+
 /* ── CONFIG ─────────────────────────────────────────────── */
 const AUTH_SHEET = "https://docs.google.com/spreadsheets/d/1p03KacnfGQhtXm7umEnbktki3wCpaVzC_16W51iKn6U/export?format=csv&gid=0";
- 
+
 const FB_PROJECT = "hit-monitorv3";
 const FB_KEY     = "AIzaSyCngCK0LNH0jFWGrPy9o2b5whfxBLdTh3Y";
 const FS_BASE    = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
- 
+
 /* ── INTENT STALENESS THRESHOLD ─────────────────────────── */
-// Intents older than this (ms) are considered stale and ignored/cleaned
 const INTENT_MAX_AGE_MS = 30_000; // 30 seconds
- 
+
 /* ── GM_xmlhttpRequest → Promise ────────────────────────── */
 function gmPatch(url, body) {
   return new Promise((resolve, reject) => {
@@ -41,7 +40,7 @@ function gmPatch(url, body) {
     });
   });
 }
- 
+
 function gmFetchCSV(url) {
   return new Promise((resolve, reject) => {
     GM_xmlhttpRequest({
@@ -55,7 +54,7 @@ function gmFetchCSV(url) {
     });
   });
 }
- 
+
 /* ── Firestore REST helpers ──────────────────────────────── */
 function toFSFields(obj) {
   const fields = {};
@@ -67,7 +66,7 @@ function toFSFields(obj) {
   }
   return { fields };
 }
- 
+
 async function fsSet(docId, data) {
   const keys = Object.keys(data).filter(k => data[k] !== null && data[k] !== undefined);
   if (!keys.length) return;
@@ -77,7 +76,7 @@ async function fsSet(docId, data) {
     await gmPatch(url, toFSFields(data));
   } catch(e) {}
 }
- 
+
 /* ── STATUS BADGE ────────────────────────────────────────── */
 function makeBadge() {
   const b = document.createElement("div");
@@ -105,7 +104,7 @@ function makeBadge() {
   document.body.appendChild(b);
   return b;
 }
- 
+
 function setBadge(b, state, html) {
   const C = {
     loading: ["#1e3a5f", "#64748b"],
@@ -119,14 +118,14 @@ function setBadge(b, state, html) {
   b.style.color       = fc;
   b.innerHTML         = html;
 }
- 
+
 /* ── LOCK SCREEN ─────────────────────────────────────────── */
 function xe(s) {
   return String(s || "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
- 
+
 function showLock(workerId, reason) {
   document.getElementById("__lock__")?.remove();
   const ov = document.createElement("div");
@@ -142,7 +141,7 @@ function showLock(workerId, reason) {
     justifyContent: "center",
     fontFamily:     "'Segoe UI', system-ui, sans-serif",
   });
- 
+
   ov.innerHTML = `
     <div style="background:#080f1e;border:1px solid rgba(255,60,80,.3);
                 border-radius:18px;padding:44px 52px;max-width:500px;width:92%;
@@ -159,21 +158,21 @@ function showLock(workerId, reason) {
         Reason: <span style="color:#f87171">${xe(reason || "Not authorized")}</span>
       </div>
     </div>`;
- 
+
   document.body.appendChild(ov);
   document.body.style.overflow = "hidden";
 }
- 
+
 function hideLock() {
   document.getElementById("__lock__")?.remove();
   document.body.style.overflow = "";
 }
- 
+
 /* ── EXACT VACUUM WORKER ID DETECTION ────────────────────── */
 function getWorkerId() {
   return new Promise(resolve => {
     var WID_RE = /\b(A[A-Z0-9]{9,19})\b/;
- 
+
     function scanTextNodes(){
         var walker = document.createTreeWalker(document.body, 4, null, false);
         var node;
@@ -188,7 +187,7 @@ function getWorkerId() {
     }
     var fromDOM = scanTextNodes();
     if (fromDOM){ resolve(fromDOM); return; }
- 
+
     try {
         var win = unsafeWindow || window;
         var globals = ['__reactInitialState__','__INITIAL_STATE__','__APP_STATE__',
@@ -201,7 +200,7 @@ function getWorkerId() {
             if (wm){ resolve(wm[1]); return; }
         }
     } catch(e){}
- 
+
     var scripts = document.querySelectorAll('script');
     for (var s = 0; s < scripts.length; s++){
         var sc = scripts[s].textContent || '';
@@ -212,10 +211,9 @@ function getWorkerId() {
             if (sm && sm[1] && /^A[A-Z0-9]{9,19}$/.test(sm[1])){ resolve(sm[1]); return; }
         }
     }
- 
     var ck = (document.cookie || '').match(/worker_id=([A-Z0-9]{10,20})/i);
     if (ck && ck[1]){ resolve(ck[1].toUpperCase()); return; }
- 
+
     var tried = 0;
     var apis = ['https://worker.mturk.com/api/worker', 'https://worker.mturk.com/api/profile', 'https://worker.mturk.com/worker_requirements'];
     function tryApi(){
@@ -235,7 +233,7 @@ function getWorkerId() {
             ontimeout: function(){ tryApi(); }
         });
     }
- 
+
     function tryDashboard(){
         GM_xmlhttpRequest({
             method: 'GET',
@@ -250,9 +248,9 @@ function getWorkerId() {
             ontimeout: function(){ resolve(null); }
         });
     }
- 
+
     tryApi();
- 
+
     function extractWid(text){
         var pats = [/worker[_\-]?id['":\s]+([A-Z0-9]{10,20})/i, /"id"\s*:\s*"(A[A-Z0-9]{12,19})"/i, /\b(A[A-Z0-9]{13,19})\b/];
         for (var i = 0; i < pats.length; i++){
@@ -263,7 +261,7 @@ function getWorkerId() {
     }
   });
 }
- 
+
 /* ── BULLETPROOF CSV PARSER ─────────────────────────────── */
 function parseCSV(txt) {
   txt = (txt || '').replace(/^\uFEFF/, '');
@@ -296,39 +294,38 @@ function parseCSV(txt) {
   }
   return rows;
 }
- 
+
 /* ── SMART SHEET AUTHORIZATION (STRICT USERNAME PULL) ───── */
 async function authorize(workerId) {
   if (!workerId) return { denied: true, reason: "Worker ID not detected" };
   const wid = workerId.toUpperCase().trim();
- 
+
   try {
     const url = AUTH_SHEET + '&nocache=' + Date.now();
     const r = await gmFetchCSV(url);
- 
-    // FIX #7: Reject non-200 responses explicitly before parsing
+
     if (r.status !== 200) {
       return { denied: true, reason: `Auth sheet returned HTTP ${r.status}` };
     }
- 
+
     const body = r.responseText || '';
     if (body.indexOf('<html') !== -1 || body.indexOf('<!DOCTYPE') !== -1) {
       return { denied: true, reason: "Auth sheet returned HTML (possible login page)" };
     }
- 
+
     const rows = parseCSV(body);
     if (!rows || rows.length < 2) {
       return { denied: true, reason: "Auth sheet is empty or malformed" };
     }
- 
+
     const headers = rows[0].map(h => h.toUpperCase().trim());
- 
+
     let widCol = headers.findIndex(h => h === 'WORKER ID' || h === 'WORKERID' || h === 'ID' || h === 'WORKER_ID');
     let teamCol = headers.findIndex(h => h.includes('TEAM'));
     let userCol = headers.findIndex(h => h === 'USERNAME' || h === 'NAME' || h === 'USER NAME' || h === 'USER');
- 
+
     let foundRow = -1;
- 
+
     if (widCol !== -1) {
       for (let row = 1; row < rows.length; row++) {
         if (rows[row][widCol] && rows[row][widCol].toUpperCase().trim() === wid) {
@@ -337,7 +334,7 @@ async function authorize(workerId) {
         }
       }
     }
- 
+
     if (foundRow === -1) {
       for (let col = 0; col < headers.length; col++) {
         for (let row = 1; row < rows.length; row++) {
@@ -350,29 +347,29 @@ async function authorize(workerId) {
         if (foundRow !== -1) break;
       }
     }
- 
+
     if (foundRow !== -1) {
       let teamname = "Authorized";
       let username = wid;
- 
+
       if (teamCol !== -1 && rows[foundRow][teamCol]) teamname = rows[foundRow][teamCol].trim();
- 
+
       if (userCol !== -1 && rows[foundRow][userCol]) {
          let sheetName = rows[foundRow][userCol].trim();
          if (sheetName !== "") {
              username = sheetName;
          }
       }
- 
+
       return { username, teamname, denied: false };
     }
- 
+
     return { denied: true, reason: "Worker ID not found in sheet" };
   } catch(e) {
     return { denied: true, reason: "Network Error reading Auth Sheet" };
   }
 }
- 
+
 /* ── ZERO-LATENCY JSON QUEUE SCRAPER (Cache Buster Added) ── */
 async function getQueueJSON() {
     try {
@@ -380,25 +377,24 @@ async function getQueueJSON() {
             cache: 'no-store',
             headers: { 'Accept': 'application/json', 'Pragma': 'no-cache' }
         });
- 
+
         if (res.ok) {
             const data = await res.json();
             const tasks = data.tasks || data.assignments || data.results || [];
- 
+
             const now = Date.now();
- 
+
             return tasks.map(t => {
                 const proj = t.project || t;
                 const reqName = proj.requester_name || t.requester_name || "Unknown";
                 const remainingSecs = parseInt(t.time_to_deadline_in_seconds || proj.assignment_duration_in_seconds) || 3600;
- 
+
                 return {
                     assignmentId: t.assignment_id || t.task_id,
                     requester: reqName,
                     title: proj.title || "HIT",
                     reward: parseFloat(proj.monetary_reward?.amount_in_dollars || proj.reward || 0),
                     timeSecs: remainingSecs,
-                    // FIX #2: Compute the absolute expiry once at scrape time
                     expiresAtMs: now + remainingSecs * 1000,
                 };
             });
@@ -406,10 +402,9 @@ async function getQueueJSON() {
     } catch(e) {}
     return null;
 }
- 
+
 /* ── INTENT HELPERS (with staleness cleanup) ─────────────── */
- 
-// FIX #3: Read intent only if fresh; delete stale ones automatically
+
 function readIntent(id, type) {
     const key = `intent_${type}_${id}`;
     const raw = localStorage.getItem(key);
@@ -421,22 +416,22 @@ function readIntent(id, type) {
     }
     return true;
 }
- 
+
 function clearIntent(id, type) {
     localStorage.removeItem(`intent_${type}_${id}`);
 }
- 
+
 function markIntent(id, type) {
     if (!id) return;
     localStorage.setItem(`intent_${type}_${id}`, Date.now());
- 
+
     if (type === "return") {
         fsSet(id, { status: "manual_returned", returnedAt: new Date().toISOString(), timeLimitSec: 0 });
     } else if (type === "submit") {
         fsSet(id, { status: "submitted", submittedAt: new Date().toISOString(), timeLimitSec: 0 });
     }
 }
- 
+
 /* ── PERSISTENT KNOWN HITS (survives page navigation) ───── */
 const KNOWN_HITS_KEY = '__ht_known_hits__';
 
@@ -448,31 +443,28 @@ function saveKnownHits(map) {
     } catch (e) {}
 }
 /* ── BULLETPROOF ACTION TRACKER (INTENT MEMORY SYSTEM) ──── */
- 
-// FIX #4: Use a stack instead of a single variable so rapid clicks don't clobber each other
+
 const pendingReturnIds = [];
- 
+
 document.addEventListener("click", ev => {
     const btn = ev.target.closest("a, button, [role='button'], input[type='submit']");
     if (!btn) return;
- 
+
     const txt = (btn.textContent || btn.value || "").trim().toLowerCase();
     const isReturn = txt === "return" || txt.includes("return hit");
     const isSubmit = txt === "submit" || txt.includes("submit hit");
- 
+
     if (!isReturn && !isSubmit) return;
- 
+
     let assignId = null;
- 
-    // 1. If inside the HIT Workspace, pull ID from URL
+
     const urlParams = new URLSearchParams(window.location.search);
     assignId = urlParams.get("assignment_id") || urlParams.get("assignmentId");
     if (!assignId) {
         const pathMatch = window.location.pathname.match(/\/tasks\/([A-Z0-9]+)/i);
         if (pathMatch) assignId = pathMatch[1];
     }
- 
-    // 2. If on the Queue page, pull ID by scanning the "Work" link in the same row
+
     if (!assignId) {
         const row = btn.closest('tr, li, .table-row, .task-row');
         if (row) {
@@ -484,14 +476,12 @@ document.addEventListener("click", ev => {
             }
         }
     }
- 
-    // 3. Process the Action
+
     if (isReturn) {
         if (assignId) {
             pendingReturnIds.push(assignId);
             markIntent(assignId, "return");
         } else if (pendingReturnIds.length > 0) {
-            // Modal confirm button – pop the most recent pending ID
             const poppedId = pendingReturnIds.pop();
             markIntent(poppedId, "return");
         }
@@ -499,42 +489,39 @@ document.addEventListener("click", ev => {
         markIntent(assignId, "submit");
     }
 }, true);
- 
- 
+
+
 /* ═══════════════════════════════════════════════════════════
-   QUEUE LOGIC & SYNC ENGINE
+   QUEUE LOGIC & SYNC ENGINE (v5.7 — Firebase quota optimized)
 ═══════════════════════════════════════════════════════════ */
 const PATH     = location.pathname;
 const isQueue  = /^\/tasks\/?$/.test(PATH);
- 
+
 if (isQueue) {
   const badge = makeBadge();
   setBadge(badge, "loading", "⏳ Detecting Worker ID…");
- 
+
   const workerId = await getWorkerId();
- 
+
   if (!workerId) {
     setBadge(badge, "error", "❌ Worker ID not found");
     showLock("Unknown", "Could not detect Worker ID");
     return;
   }
- 
+
   setBadge(badge, "loading", "🔐 Verifying Access…");
   let authResult = await authorize(workerId);
- 
+
   if (!authResult || authResult.denied) {
     setBadge(badge, "denied", "🔒 Access Denied");
     showLock(workerId, authResult?.reason || "not_found");
     return;
   }
- 
+
   hideLock();
   let { username, teamname } = authResult;
   setBadge(badge, "ok", `✅ ${username} | ${teamname}`);
- 
-  // FIX #2: Store the *absolute* expiry timestamp computed once at first sight,
-  // so it never drifts on subsequent syncs.
-  // SYNC FIX: Load persisted known HITs for cross-page vanish detection
+
   const knownHits = new Map();
   try {
       const raw = localStorage.getItem(KNOWN_HITS_KEY);
@@ -545,46 +532,45 @@ if (isQueue) {
           }
       }
   } catch (e) {}
+
   let   isSyncing = false;
- 
-  // FIX #1: Use a cancellable timer reference so we can kill it on navigation
+  let   lastQueueHash = '';
+  let   lastHeartbeatAt = 0;
+  const HEARTBEAT_MS = 30000;
+
   let syncTimer = null;
- 
+
   function stopSync() {
     if (syncTimer !== null) {
       clearTimeout(syncTimer);
       syncTimer = null;
     }
   }
- 
-  // FIX #1: Kill the sync loop when the user navigates away from the queue page
+
   window.addEventListener("beforeunload", stopSync);
-  // Also observe SPA-style navigation
   const origPushState = history.pushState;
   history.pushState = function() {
     origPushState.apply(this, arguments);
     if (!/^\/tasks\/?$/.test(location.pathname)) stopSync();
   };
- 
+
   async function syncQueue() {
     if (isSyncing) return;
     isSyncing = true;
- 
+
     try {
       let hits = await getQueueJSON();
       if (!hits) return;
- 
+
       const now = Date.now();
       let currentIds = new Set(hits.map(h => h.assignmentId));
- 
-      // SMART DIFFING: classify vanished HITs
+
+      // SMART DIFFING: classify vanished HITs (always runs — these are important writes)
       for (let [oldId, meta] of knownHits.entries()) {
           if (!currentIds.has(oldId)) {
- 
-              // FIX #3: Use staleness-aware intent readers
               const intentReturn = readIntent(oldId, "return");
               const intentSubmit = readIntent(oldId, "submit");
- 
+
               if (intentReturn) {
                   await fsSet(oldId, { status: "manual_returned", returnedAt: new Date().toISOString(), timeLimitSec: 0 });
                   clearIntent(oldId, "return");
@@ -592,7 +578,6 @@ if (isQueue) {
                   await fsSet(oldId, { status: "submitted", submittedAt: new Date().toISOString(), timeLimitSec: 0 });
                   clearIntent(oldId, "submit");
               } else {
-                  // FIX #2: Compare against the stable expiry, not a re-derived one
                   if (now >= meta.expiresAtMs - 5000) {
                       await fsSet(oldId, { status: "expired", timeLimitSec: 0 });
                   } else {
@@ -602,63 +587,77 @@ if (isQueue) {
               knownHits.delete(oldId);
           }
       }
- 
+
       setBadge(badge, hits.length > 0 ? "sync" : "ok",
         (hits.length > 0 ? `📡 Syncing ${hits.length} HITs` : "✅ Queue empty") +
         `<br><span style='font-size:10px'>${username}</span>`
       );
- 
+
+      // QUOTA OPTIMIZATION: only write to Firestore when queue changed or heartbeat is due
+      const currentHash = hits.map(h => h.assignmentId).sort().join('|');
+      const queueChanged = currentHash !== lastQueueHash;
+      const heartbeatDue = (now - lastHeartbeatAt) >= HEARTBEAT_MS;
+
       const pushPromises = hits.map(h => {
         const isNew = !knownHits.has(h.assignmentId);
- 
-        // SYNC FIX: Don't overwrite status if user already submitted/returned this HIT
+
         if (readIntent(h.assignmentId, "submit") || readIntent(h.assignmentId, "return")) {
           if (isNew) knownHits.set(h.assignmentId, { expiresAtMs: h.expiresAtMs });
           return Promise.resolve();
         }
 
-        // FIX #2: Only set the expiry on first encounter; reuse it on subsequent syncs
         if (isNew) {
           knownHits.set(h.assignmentId, { expiresAtMs: h.expiresAtMs });
         }
-        // On subsequent syncs, knownHits already has the correct stable expiresAtMs
- 
+
         const meta = knownHits.get(h.assignmentId);
- 
-        const payload = {
-          workerId, username, teamname,
-          requester:    h.requester,
-          title:        h.title,
-          reward:       h.reward,
-          expiresAt:    new Date(meta.expiresAtMs).toISOString(),
-          timeLimitSec: Math.max(0, Math.round((meta.expiresAtMs - Date.now()) / 1000)),
-          status:       "active",
-          assignmentId: h.assignmentId,
-          lastSyncAt:   new Date().toISOString(),
-        };
- 
-        if (isNew) payload.acceptedAt = new Date().toISOString();
- 
-        return fsSet(h.assignmentId, payload);
+
+        // New HIT: always do full write so it appears on dashboard instantly
+        if (isNew) {
+          return fsSet(h.assignmentId, {
+            workerId, username, teamname,
+            requester:    h.requester,
+            title:        h.title,
+            reward:       h.reward,
+            expiresAt:    new Date(meta.expiresAtMs).toISOString(),
+            timeLimitSec: Math.max(0, Math.round((meta.expiresAtMs - Date.now()) / 1000)),
+            status:       "active",
+            assignmentId: h.assignmentId,
+            lastSyncAt:   new Date().toISOString(),
+            acceptedAt:   new Date().toISOString(),
+          });
+        }
+
+        // Existing HIT: only send lightweight heartbeat every 30s
+        if (heartbeatDue) {
+          return fsSet(h.assignmentId, {
+            lastSyncAt:   new Date().toISOString(),
+            timeLimitSec: Math.max(0, Math.round((meta.expiresAtMs - Date.now()) / 1000)),
+          });
+        }
+
+        // Nothing changed — skip Firestore write entirely
+        return Promise.resolve();
       });
- 
+
       await Promise.all(pushPromises);
 
-      // Persist knownHits so vanish detection works across page navigations
+      if (queueChanged || heartbeatDue) lastHeartbeatAt = Date.now();
+      lastQueueHash = currentHash;
+
       saveKnownHits(knownHits);
- 
+
     } catch (e) {
       console.error("Sync error", e);
     } finally {
       isSyncing = false;
-      // FIX #1: Only schedule next tick if we're still on the queue page
       if (/^\/tasks\/?$/.test(location.pathname)) {
         syncTimer = setTimeout(syncQueue, 5000);
       }
     }
   }
- 
+
   syncQueue();
 }
- 
+
 })();
