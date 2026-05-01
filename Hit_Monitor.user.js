@@ -1,42 +1,37 @@
 // ==UserScript==
-// @name        MTurk HIT Tracker (Ultimate Action Memory)
+// @name        MTurk HIT Tracker (Local Server Edition)
 // @namespace   https://worker.mturk.com/
-// @version     5.7
-// @description Perfects Return/Submit tracking using LocalStorage intent memory. Optimized Firestore writes to reduce Firebase quota usage.
+// @version     6.0
+// @description HIT tracking via your own Panda Commander server (no Firebase, no quota limits)
 // @match       https://worker.mturk.com/*
-// @updateURL   https://hit-monitorv3.web.app/Hit_Monitor.user.js
-// @downloadURL https://hit-monitorv3.web.app/Hit_Monitor.user.js
 // @grant       GM_xmlhttpRequest
 // @grant       unsafeWindow
+// @connect     38.58.179.188
 // @connect     docs.google.com
-// @connect     firestore.googleapis.com
 // @run-at      document-end
 // ==/UserScript==
 
 (async () => {
 
 /* ── CONFIG ─────────────────────────────────────────────── */
-const AUTH_SHEET = "https://docs.google.com/spreadsheets/d/1p03KacnfGQhtXm7umEnbktki3wCpaVzC_16W51iKn6U/export?format=csv&gid=0";
-
-const FB_PROJECT = "hit-monitorv3";
-const FB_KEY     = "AIzaSyCngCK0LNH0jFWGrPy9o2b5whfxBLdTh3Y";
-const FS_BASE    = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
+const SERVER_URL  = "http://38.58.179.188:3000";   // Tomar Panda Commander server
+const AUTH_SHEET  = "https://docs.google.com/spreadsheets/d/1p03KacnfGQhtXm7umEnbktki3wCpaVzC_16W51iKn6U/export?format=csv&gid=0";
 
 /* ── INTENT STALENESS THRESHOLD ─────────────────────────── */
 const INTENT_MAX_AGE_MS = 30_000; // 30 seconds
 
-/* ── GM_xmlhttpRequest → Promise ────────────────────────── */
-function gmPatch(url, body) {
+/* ── GM_xmlhttpRequest → Promise (POST to your server, replaces Firestore PATCH) ─ */
+function gmPost(url, body) {
   return new Promise((resolve, reject) => {
     GM_xmlhttpRequest({
-      method:  "PATCH",
+      method:  "POST",
       url,
       headers: { "Content-Type": "application/json" },
       data:    JSON.stringify(body),
       timeout: 12000,
       onload:   r => resolve(r.status),
-      onerror:  () => reject(new Error("Network error (Firestore PATCH)")),
-      ontimeout: () => reject(new Error("Firestore write timed out")),
+      onerror:  () => reject(new Error("Network error (server POST)")),
+      ontimeout: () => reject(new Error("Server write timed out")),
     });
   });
 }
@@ -55,26 +50,20 @@ function gmFetchCSV(url) {
   });
 }
 
-/* ── Firestore REST helpers ──────────────────────────────── */
-function toFSFields(obj) {
-  const fields = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (v === null || v === undefined) continue;
-    if (typeof v === "string")  fields[k] = { stringValue: v };
-    else if (typeof v === "number")  fields[k] = { doubleValue: v };
-    else if (typeof v === "boolean") fields[k] = { booleanValue: v };
+/* ── Save HIT data to your server (replaces Firestore fsSet) ─────────────── */
+async function serverSet(docId, data) {
+  // Strip null/undefined fields just like the Firestore version did
+  const clean = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (v !== null && v !== undefined) clean[k] = v;
   }
-  return { fields };
-}
+  if (!Object.keys(clean).length) return;
 
-async function fsSet(docId, data) {
-  const keys = Object.keys(data).filter(k => data[k] !== null && data[k] !== undefined);
-  if (!keys.length) return;
-  const mask = keys.map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
-  const url  = `${FS_BASE}/hits/${encodeURIComponent(docId)}?key=${FB_KEY}&${mask}`;
   try {
-    await gmPatch(url, toFSFields(data));
-  } catch(e) {}
+    await gmPost(`${SERVER_URL}/hits/${encodeURIComponent(docId)}`, clean);
+  } catch (e) {
+    /* Silent fail — keep retrying on next sync cycle */
+  }
 }
 
 /* ── STATUS BADGE ────────────────────────────────────────── */
@@ -426,9 +415,9 @@ function markIntent(id, type) {
     localStorage.setItem(`intent_${type}_${id}`, Date.now());
 
     if (type === "return") {
-        fsSet(id, { status: "manual_returned", returnedAt: new Date().toISOString(), timeLimitSec: 0 });
+        serverSet(id, { status: "manual_returned", returnedAt: new Date().toISOString(), timeLimitSec: 0 });
     } else if (type === "submit") {
-        fsSet(id, { status: "submitted", submittedAt: new Date().toISOString(), timeLimitSec: 0 });
+        serverSet(id, { status: "submitted", submittedAt: new Date().toISOString(), timeLimitSec: 0 });
     }
 }
 
@@ -492,7 +481,7 @@ document.addEventListener("click", ev => {
 
 
 /* ═══════════════════════════════════════════════════════════
-   QUEUE LOGIC & SYNC ENGINE (v5.7 — Firebase quota optimized)
+   QUEUE LOGIC & SYNC ENGINE (v6.0 — local server, no quota limits)
 ═══════════════════════════════════════════════════════════ */
 const PATH     = location.pathname;
 const isQueue  = /^\/tasks\/?$/.test(PATH);
@@ -572,16 +561,16 @@ if (isQueue) {
               const intentSubmit = readIntent(oldId, "submit");
 
               if (intentReturn) {
-                  await fsSet(oldId, { status: "manual_returned", returnedAt: new Date().toISOString(), timeLimitSec: 0 });
+                  await serverSet(oldId, { status: "manual_returned", returnedAt: new Date().toISOString(), timeLimitSec: 0 });
                   clearIntent(oldId, "return");
               } else if (intentSubmit) {
-                  await fsSet(oldId, { status: "submitted", submittedAt: new Date().toISOString(), timeLimitSec: 0 });
+                  await serverSet(oldId, { status: "submitted", submittedAt: new Date().toISOString(), timeLimitSec: 0 });
                   clearIntent(oldId, "submit");
               } else {
                   if (now >= meta.expiresAtMs - 5000) {
-                      await fsSet(oldId, { status: "expired", timeLimitSec: 0 });
+                      await serverSet(oldId, { status: "expired", timeLimitSec: 0 });
                   } else {
-                      await fsSet(oldId, { status: "submitted", submittedAt: new Date().toISOString(), timeLimitSec: 0 });
+                      await serverSet(oldId, { status: "submitted", submittedAt: new Date().toISOString(), timeLimitSec: 0 });
                   }
               }
               knownHits.delete(oldId);
@@ -593,7 +582,7 @@ if (isQueue) {
         `<br><span style='font-size:10px'>${username}</span>`
       );
 
-      // QUOTA OPTIMIZATION: only write to Firestore when queue changed or heartbeat is due
+      // QUOTA OPTIMIZATION (legacy — keeping for bandwidth saving)
       const currentHash = hits.map(h => h.assignmentId).sort().join('|');
       const queueChanged = currentHash !== lastQueueHash;
       const heartbeatDue = (now - lastHeartbeatAt) >= HEARTBEAT_MS;
@@ -612,9 +601,9 @@ if (isQueue) {
 
         const meta = knownHits.get(h.assignmentId);
 
-        // New HIT: always do full write so it appears on dashboard instantly
+        // New HIT: full write
         if (isNew) {
-          return fsSet(h.assignmentId, {
+          return serverSet(h.assignmentId, {
             workerId, username, teamname,
             requester:    h.requester,
             title:        h.title,
@@ -628,15 +617,14 @@ if (isQueue) {
           });
         }
 
-        // Existing HIT: only send lightweight heartbeat every 30s
+        // Existing HIT: lightweight heartbeat every 30s
         if (heartbeatDue) {
-          return fsSet(h.assignmentId, {
+          return serverSet(h.assignmentId, {
             lastSyncAt:   new Date().toISOString(),
             timeLimitSec: Math.max(0, Math.round((meta.expiresAtMs - Date.now()) / 1000)),
           });
         }
 
-        // Nothing changed — skip Firestore write entirely
         return Promise.resolve();
       });
 
