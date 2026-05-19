@@ -486,7 +486,23 @@ document.addEventListener("click", ev => {
 const PATH     = location.pathname;
 const isQueue  = /^\/tasks\/?$/.test(PATH);
 
+// Wait for document.body — when this script is loaded via the PowerFull
+// loader (which runs at document-start), the body may not exist yet at the
+// time the decrypted code is eval'd. Without this, makeBadge / getWorkerId
+// fail silently and the badge never appears.
+async function waitForBody() {
+  if (document.body) return;
+  await new Promise(resolve => {
+    const obs = new MutationObserver(() => {
+      if (document.body) { obs.disconnect(); resolve(); }
+    });
+    obs.observe(document.documentElement, { childList: true });
+  });
+}
+
 if (isQueue) {
+  await waitForBody();
+
   const badge = makeBadge();
   setBadge(badge, "loading", "⏳ Detecting Worker ID…");
 
