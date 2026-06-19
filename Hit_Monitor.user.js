@@ -541,6 +541,7 @@ if (isQueue) {
   let   isSyncing = false;
   let   lastQueueHash = '';
   let   lastHeartbeatAt = 0;
+  let   emptyConfirms = 0;          // consecutive "queue is suddenly empty" reads
   const HEARTBEAT_MS = 30000;
 
   let syncTimer = null;
@@ -570,27 +571,46 @@ if (isQueue) {
       const now = Date.now();
       let currentIds = new Set(hits.map(h => h.assignmentId));
 
-      // SMART DIFFING: classify vanished HITs (always runs — these are important writes)
-      for (let [oldId, meta] of knownHits.entries()) {
-          if (!currentIds.has(oldId)) {
-              const intentReturn = readIntent(oldId, "return");
-              const intentSubmit = readIntent(oldId, "submit");
+      // FALSE-EXPIRE GUARD ──────────────────────────────────────────────
+      // MTurk's tasks.json occasionally returns an empty/partial list for a
+      // single cycle (network blip, throttled background tab, brief 5xx).
+      // When that happens EVERY active HIT looks like it "vanished" and the
+      // classifier below would wrongly mark real, still-active HITs as
+      // expired/submitted — the exact reason HITs you actually submitted
+      // showed up as Expired. A *full* vanish (queue went from non-empty to
+      // completely empty in one step) is therefore treated as suspicious and
+      // must be confirmed by a second consecutive empty read before we trust
+      // it. A partial vanish (some HITs remain) is a strong, trustworthy
+      // signal and is classified immediately. Explicit Submit/Return clicks
+      // are already written the instant they happen (markIntent), so this
+      // guard never delays a real submission — only the *guessing* path.
+      const fullVanish = currentIds.size === 0 && knownHits.size > 0;
+      if (fullVanish) emptyConfirms++; else emptyConfirms = 0;
+      const trustVanish = !fullVanish || emptyConfirms >= 2;
 
-              if (intentReturn) {
-                  await serverSet(oldId, { status: "manual_returned", returnedAt: new Date().toISOString(), timeLimitSec: 0 });
-                  clearIntent(oldId, "return");
-              } else if (intentSubmit) {
-                  await serverSet(oldId, { status: "submitted", submittedAt: new Date().toISOString(), timeLimitSec: 0 });
-                  clearIntent(oldId, "submit");
-              } else {
-                  if (now >= meta.expiresAtMs - 5000) {
-                      await serverSet(oldId, { status: "expired", timeLimitSec: 0 });
-                  } else {
-                      await serverSet(oldId, { status: "submitted", submittedAt: new Date().toISOString(), timeLimitSec: 0 });
-                  }
-              }
-              knownHits.delete(oldId);
-          }
+      // SMART DIFFING: classify vanished HITs (important status writes)
+      if (trustVanish) {
+        for (let [oldId, meta] of knownHits.entries()) {
+            if (!currentIds.has(oldId)) {
+                const intentReturn = readIntent(oldId, "return");
+                const intentSubmit = readIntent(oldId, "submit");
+
+                if (intentReturn) {
+                    await serverSet(oldId, { status: "manual_returned", returnedAt: new Date().toISOString(), timeLimitSec: 0 });
+                    clearIntent(oldId, "return");
+                } else if (intentSubmit) {
+                    await serverSet(oldId, { status: "submitted", submittedAt: new Date().toISOString(), timeLimitSec: 0 });
+                    clearIntent(oldId, "submit");
+                } else {
+                    if (now >= meta.expiresAtMs - 5000) {
+                        await serverSet(oldId, { status: "expired", timeLimitSec: 0 });
+                    } else {
+                        await serverSet(oldId, { status: "submitted", submittedAt: new Date().toISOString(), timeLimitSec: 0 });
+                    }
+                }
+                knownHits.delete(oldId);
+            }
+        }
       }
 
       setBadge(badge, hits.length > 0 ? "sync" : "ok",

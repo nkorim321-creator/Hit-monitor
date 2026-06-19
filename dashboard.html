@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MTurk HIT Tracker — Live + Memory (Local Server)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#05080f;--s0:#080c17;--s1:#0b1120;--s2:#0f172a;--s3:#162036;
+  --bd:rgba(255,255,255,.055);--bd2:rgba(255,255,255,.1);
+  --tx:#c8d6f0;--tx2:#6b7fa8;--tx3:#2e3f60;
+  --green:#00e5a0;--gn2:rgba(0,229,160,.1);--gn3:rgba(0,229,160,.2);
+  --blue:#38bdf8;--bl2:rgba(56,189,248,.1);
+  --amber:#fbbf24;--am2:rgba(251,191,36,.1);
+  --red:#ff4060;--rd2:rgba(255,64,96,.1);
+  --orange:#fb923c;--or2:rgba(251,146,60,.1);
+  --purple:#a78bfa;--cyan:#22d3ee;
+  --mono:'JetBrains Mono',monospace;
+  --sans:'Syne',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--bg);color:var(--tx);min-height:100vh;font-size:13px;
+  background-image:
+    radial-gradient(ellipse 70% 40% at 50% -5%,rgba(0,229,160,.05),transparent),
+    radial-gradient(ellipse 50% 30% at 90% 80%,rgba(56,189,248,.04),transparent)}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--s3);border-radius:3px}
+
+/* ── HEADER ── */
+.hdr{
+  position:sticky;top:0;z-index:200;
+  background:rgba(8,12,23,.96);backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--bd);
+  padding:0 22px;height:60px;
+  display:flex;align-items:center;gap:12px;
+}
+.logo{font-family:var(--mono);font-size:13px;font-weight:700;
+  color:var(--tx);white-space:nowrap;flex-shrink:0}
+.logo em{color:var(--green);font-style:normal}
+.chip{
+  display:inline-flex;align-items:center;gap:5px;flex-shrink:0;
+  background:var(--gn2);border:1px solid var(--gn3);
+  color:var(--green);font-family:var(--mono);font-size:9px;font-weight:700;
+  padding:3px 10px;border-radius:20px;letter-spacing:.5px;
+}
+.dot{
+  width:6px;height:6px;border-radius:50%;background:var(--green);
+  animation:dp 2s ease-in-out infinite;
+}
+@keyframes dp{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.65)}}
+#sync{font-family:var(--mono);font-size:10px;color:var(--tx3);white-space:nowrap}
+#clk{font-family:var(--mono);font-size:13px;font-weight:600;
+  color:var(--tx2);letter-spacing:.5px;white-space:nowrap;margin-left:auto}
+
+/* ── CONTROLS ── */
+.cbar{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:10px 22px;background:rgba(8,12,23,.6);border-bottom:1px solid var(--bd);
+}
+.ctrl{
+  display:flex;align-items:center;gap:5px;
+  background:var(--s1);border:1px solid var(--bd);
+  border-radius:7px;padding:5px 11px;transition:border-color .18s;
+}
+.ctrl:focus-within{border-color:var(--bd2)}
+.cl{
+  font-family:var(--mono);font-size:9px;font-weight:600;
+  color:var(--tx3);text-transform:uppercase;letter-spacing:.7px;white-space:nowrap;
+}
+select{
+  background:transparent;border:none;outline:none;color:var(--tx);
+  font-family:var(--sans);font-size:12px;font-weight:600;
+  -webkit-appearance:none;appearance:none;cursor:pointer;padding:0 2px;min-width:75px;
+}
+select option{background:#0f172a;color:var(--tx)}
+#hrC{display:none}
+
+/* ── TOOLBAR RIGHT (memory + actions) ── */
+.cbar-right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.4px;
+  background:var(--s1);border:1px solid var(--bd);color:var(--tx2);
+  padding:6px 12px;border-radius:7px;cursor:pointer;transition:border-color .16s,color .16s;white-space:nowrap}
+.btn:hover{border-color:var(--bd2);color:var(--tx)}
+.btn.danger:hover{border-color:rgba(255,64,96,.4);color:var(--red)}
+.memchip{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.4px;
+  color:var(--purple);background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.22);
+  padding:5px 10px;border-radius:20px;white-space:nowrap}
+
+/* ── STATS ── */
+.stats{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));
+  gap:10px;padding:14px 22px;
+}
+.sc{
+  background:var(--s0);border:1px solid var(--bd);
+  border-radius:10px;padding:14px 16px;position:relative;overflow:hidden;
+  transition:border-color .2s,transform .2s;
+}
+.sc:hover{border-color:var(--bd2);transform:translateY(-2px)}
+.sc::before{content:'';position:absolute;bottom:0;left:0;right:0;height:2px}
+.g::before{background:var(--green)}.b::before{background:var(--blue)}
+.a::before{background:var(--amber)}.p::before{background:var(--purple)}
+.c::before{background:var(--cyan)}.o::before{background:var(--orange)}.r::before{background:var(--red)}
+.sl{font-family:var(--mono);font-size:9px;font-weight:600;color:var(--tx3);
+  text-transform:uppercase;letter-spacing:.7px;margin-bottom:7px}
+.sv{font-family:var(--mono);font-size:26px;font-weight:700;line-height:1;color:var(--tx)}
+.g .sv{color:var(--green)}.a .sv{color:var(--amber)}.p .sv{color:var(--purple)}
+.o .sv{color:var(--orange)}.r .sv{color:var(--red)}
+.ss{font-family:var(--mono);font-size:9px;color:var(--tx3);margin-top:4px}
+
+/* ── BODY ── */
+.body{padding:0 22px 40px}
+
+/* ── TEAM / DAY BLOCK ── */
+.team{
+  background:var(--s0);border:1px solid var(--bd);
+  border-radius:11px;margin-bottom:12px;overflow:hidden;transition:border-color .18s;
+}
+.team:hover{border-color:var(--bd2)}
+.thdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 16px;background:var(--s1);border-bottom:1px solid var(--bd);
+  cursor:pointer;user-select:none;gap:10px;flex-wrap:wrap;transition:background .14s;
+}
+.thdr:hover{background:var(--s2)}
+.tn{font-family:var(--mono);font-size:12px;font-weight:700;
+  color:var(--cyan);display:flex;align-items:center;gap:7px}
+.team.day .tn{color:var(--purple)}
+.chv{font-size:9px;color:var(--tx3);transition:transform .18s;flex-shrink:0}
+.team.col .chv{transform:rotate(-90deg)}
+.team.col .tbody{display:none}
+.pills{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.pill{font-family:var(--mono);font-size:9px;font-weight:700;
+  padding:2px 9px;border-radius:20px;white-space:nowrap;letter-spacing:.2px}
+.pa{background:var(--gn2);color:var(--green);border:1px solid rgba(0,229,160,.2)}
+.ps{background:var(--bl2);color:var(--blue);border:1px solid rgba(56,189,248,.2)}
+.pm{background:var(--or2);color:var(--orange);border:1px solid rgba(251,146,60,.2)}
+.pp{background:var(--rd2);color:var(--red);border:1px solid rgba(255,64,96,.2)}
+.pe{background:var(--am2);color:var(--amber);border:1px solid rgba(251,191,36,.2)}
+.day-tag{font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:.5px;
+  text-transform:uppercase;color:var(--green);background:var(--gn2);
+  border:1px solid var(--gn3);padding:1px 7px;border-radius:5px}
+
+/* ── TABLE ── */
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+thead th{
+  background:rgba(4,6,12,.85);padding:7px 13px;
+  font-family:var(--mono);font-size:9px;font-weight:600;color:var(--tx3);
+  text-transform:uppercase;letter-spacing:.5px;
+  text-align:left;border-bottom:1px solid var(--bd);white-space:nowrap;
+}
+tbody tr{border-bottom:1px solid var(--bd);transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:rgba(255,255,255,.018)}
+tbody td{padding:8px 13px;vertical-align:middle}
+.cw{font-family:var(--mono);font-size:10px;color:var(--tx2)}
+.cn{font-weight:700;color:var(--tx);font-size:13px}
+.cr{color:var(--blue);font-weight:700;font-size:12px;white-space:nowrap}
+.ct{max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:12px;color:var(--tx2)}
+.cv{font-family:var(--mono);color:var(--amber);font-weight:700;font-size:12px}
+.ca{font-size:11px;color:var(--tx2);white-space:nowrap}
+
+/* ── HISTORY NUMERIC CELLS ── */
+.cnum{font-family:var(--mono);font-weight:700;font-size:12px}
+.cpos{color:var(--tx)}
+.czero{color:var(--tx3)}
+.cearn{font-family:var(--mono);color:var(--amber);font-weight:700;font-size:12px}
+.cmr{color:var(--orange)}.car{color:var(--red)}.cac{color:var(--green)}.csub{color:var(--blue)}
+
+/* ── STATUS BADGES ── */
+.badge{
+  font-family:var(--mono);font-size:9px;font-weight:700;
+  padding:3px 9px;border-radius:20px;text-transform:uppercase;
+  letter-spacing:.3px;white-space:nowrap;display:inline-block;
+}
+.active         {background:var(--gn2);color:var(--green); border:1px solid rgba(0,229,160,.3)}
+.submitted      {background:var(--bl2);color:var(--blue);  border:1px solid rgba(56,189,248,.3)}
+.manual_returned{background:var(--or2);color:var(--orange);border:1px solid rgba(251,146,60,.3)}
+.auto_returned  {background:var(--rd2);color:var(--red);   border:1px solid rgba(255,64,96,.3)}
+.timed_out      {background:rgba(40,50,70,.4);color:var(--tx3);border:1px solid var(--bd)}
+.expired        {background:rgba(40,50,70,.4);color:var(--tx3);border:1px solid var(--bd)}
+
+/* ── TIME LEFT ── */
+.tl{font-family:var(--mono);font-size:12px;font-weight:700;white-space:nowrap}
+.tok{color:var(--green)}
+.twn{color:var(--amber)}
+.tdg{color:var(--red);animation:bk .65s infinite}
+.txx{color:var(--tx3)}
+@keyframes bk{0%,100%{opacity:1}50%{opacity:.2}}
+
+.empty{text-align:center;padding:60px 24px;font-family:var(--mono);color:var(--tx3)}
+.empty-i{font-size:36px;margin-bottom:12px;opacity:.5}
+.empty-s{font-size:12px;color:var(--tx3);margin-top:6px}
+
+/* ── CONNECTION ERROR BANNER ── */
+#errBanner{
+  display:none;
+  background:rgba(255,64,96,.12);
+  border:1px solid rgba(255,64,96,.3);
+  color:#f87171;
+  font-family:var(--mono);font-size:11px;
+  padding:10px 22px;text-align:center;
+}
+
+@media(max-width:640px){
+  .hdr{height:auto;padding:10px 14px;flex-wrap:wrap}
+  .stats,.body,.cbar{padding-left:14px;padding-right:14px}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .cbar-right{margin-left:0;width:100%}
+}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="logo">📡 MTurk HIT Tracker <em>// LIVE</em></div>
+  <span class="chip"><span class="dot"></span>REAL-TIME</span>
+  <span id="sync">Connecting…</span>
+  <span id="clk"></span>
+</div>
+
+<div id="errBanner"></div>
+
+<div class="cbar">
+  <div class="ctrl">
+    <span class="cl">MODE</span>
+    <select id="mdSel">
+      <option value="live">📊 Live</option>
+      <option value="history">🗓 History</option>
+    </select>
+  </div>
+  <div class="ctrl">
+    <span class="cl" id="fqLbl">VIEW</span>
+    <select id="fqSel">
+      <option value="hourly">Hourly</option>
+      <option value="daily">Daily</option>
+      <option value="monthly">Monthly</option>
+      <option value="yearly">Yearly</option>
+    </select>
+  </div>
+  <div class="ctrl" id="hrC">
+    <span class="cl">HRS</span>
+    <select id="hrSel">
+      <option value="1">1 hr</option><option value="2">2 hr</option>
+      <option value="3">3 hr</option><option value="4">4 hr</option>
+      <option value="6">6 hr</option><option value="8">8 hr</option>
+      <option value="12">12 hr</option>
+    </select>
+  </div>
+  <div class="ctrl">
+    <span class="cl">TEAM</span>
+    <select id="tmSel"><option value="">All Teams</option></select>
+  </div>
+  <div class="ctrl">
+    <span class="cl">WORKER</span>
+    <select id="wkSel"><option value="">All Workers</option></select>
+  </div>
+  <div class="ctrl">
+    <span class="cl">STATUS</span>
+    <select id="stSel">
+      <option value="">All</option>
+      <option value="active">Active</option>
+      <option value="submitted">Submitted</option>
+      <option value="manual_returned">M Return</option>
+      <option value="auto_returned">A Return</option>
+      <option value="expired">Expired</option>
+      <option value="timed_out">Timed Out</option>
+    </select>
+  </div>
+  <div class="cbar-right">
+    <span class="memchip" id="memChip">🧠 loading memory…</span>
+    <button class="btn" id="expBtn" title="Download your full saved tracking history as a CSV file">⬇ Export CSV</button>
+    <button class="btn danger" id="resetBtn" title="Erase the saved tracking memory on this device">🗑 Reset</button>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="sc g">
+    <div class="sl">Active Now</div>
+    <div class="sv" id="sAct">—</div>
+    <div class="ss" id="sActS">workers in queue</div>
+  </div>
+  <div class="sc b">
+    <div class="sl">Total HITs</div>
+    <div class="sv" id="sTot">—</div>
+  </div>
+  <div class="sc a">
+    <div class="sl">Earned ($)</div>
+    <div class="sv" id="sEar">—</div>
+    <div class="ss">submitted only</div>
+  </div>
+  <div class="sc p">
+    <div class="sl">Workers</div>
+    <div class="sv" id="sWrk">—</div>
+  </div>
+  <div class="sc c">
+    <div class="sl">Teams</div>
+    <div class="sv" id="sTms" style="color:var(--cyan)">—</div>
+  </div>
+  <div class="sc b">
+    <div class="sl">Submitted</div>
+    <div class="sv" id="sSub">—</div>
+  </div>
+  <div class="sc o">
+    <div class="sl">M Returns</div>
+    <div class="sv" id="sMR">—</div>
+    <div class="ss">manual</div>
+  </div>
+  <div class="sc r">
+    <div class="sl">A Returns</div>
+    <div class="sv" id="sAR">—</div>
+    <div class="ss">auto / expired</div>
+  </div>
+</div>
+
+<div class="body" id="body">
+  <div class="empty">
+    <div class="empty-i">⏳</div>
+    Connecting to server…
+    <div class="empty-s">Loading your saved tracking memory…</div>
+  </div>
+</div>
+
+<script type="module">
+/* ─────────────────────────────────────────────────────────
+   PANDA COMMANDER SERVER CONFIG
+───────────────────────────────────────────────────────── */
+const SERVER_URL = "";   // e.g. "http://38.58.179.188:3000" — leave empty when served from same server
+function api(path) { return (SERVER_URL || "") + path; }
+
+/* ─────────────────────────────────────────────────────────
+   MEMORY ENGINE  (IndexedDB persistent archive)
+   ----------------------------------------------------------
+   The Panda server only ever returns the newest ~200 HITs, so on its
+   own the dashboard can never show what you submitted yesterday/last
+   week. This archive stores EVERY HIT it has ever seen (keyed by id) in
+   the browser, so the History view has a complete day-by-day record that
+   survives page reloads, server window-rotation, and even the server
+   being offline. It is the dashboard's long-term "memory".
+───────────────────────────────────────────────────────── */
+const DB_NAME = "mturk_tracker";
+const STORE   = "hits";
+const DB_VER  = 1;
+const MAX_RECORDS = 50000;   // hard cap so the archive can never grow without bound
+
+const dbp = (function openDB() {
+  if (typeof indexedDB === "undefined") return Promise.resolve(null);
+  return new Promise(resolve => {
+    let req;
+    try { req = indexedDB.open(DB_NAME, DB_VER); }
+    catch (_) { return resolve(null); }
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE)) {
+        const os = db.createObjectStore(STORE, { keyPath: "id" });
+        os.createIndex("acceptedAt", "acceptedAt", { unique: false });
+      }
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = () => resolve(null);   // private mode / blocked ⇒ run memoryless
+  });
+})();
+
+async function archivePutMany(records) {
+  if (!records || !records.length) return;
+  const db = await dbp; if (!db) return;
+  return new Promise(res => {
+    let tx; try { tx = db.transaction(STORE, "readwrite"); } catch (_) { return res(); }
+    const os = tx.objectStore(STORE);
+    for (const r of records) { if (r && r.id) { try { os.put(r); } catch (_) {} } }
+    tx.oncomplete = () => res(); tx.onerror = () => res(); tx.onabort = () => res();
+  });
+}
+async function archiveGetAll() {
+  const db = await dbp; if (!db) return [];
+  return new Promise(res => {
+    let tx; try { tx = db.transaction(STORE, "readonly"); } catch (_) { return res([]); }
+    const rq = tx.objectStore(STORE).getAll();
+    rq.onsuccess = () => res(rq.result || []); rq.onerror = () => res([]);
+  });
+}
+async function archiveDelete(id) {
+  const db = await dbp; if (!db || !id) return;
+  return new Promise(res => {
+    let tx; try { tx = db.transaction(STORE, "readwrite"); } catch (_) { return res(); }
+    try { tx.objectStore(STORE).delete(id); } catch (_) {}
+    tx.oncomplete = () => res(); tx.onerror = () => res();
+  });
+}
+async function archiveClear() {
+  const db = await dbp; if (!db) return;
+  return new Promise(res => {
+    let tx; try { tx = db.transaction(STORE, "readwrite"); } catch (_) { return res(); }
+    try { tx.objectStore(STORE).clear(); } catch (_) {}
+    tx.oncomplete = () => res(); tx.onerror = () => res();
+  });
+}
+async function archivePrune() {
+  const db = await dbp; if (!db) return;
+  const all = await archiveGetAll();
+  if (all.length <= MAX_RECORDS) return;
+  all.sort((a, b) => tsOf(a.acceptedAt) - tsOf(b.acceptedAt));   // oldest first
+  const remove = all.slice(0, all.length - MAX_RECORDS);
+  const rm = new Set();
+  for (const r of remove) { if (r.id) { rm.add(r.id); byId.delete(r.id); } }
+  allHits = allHits.filter(h => !rm.has(h.id));
+  return new Promise(res => {
+    let tx; try { tx = db.transaction(STORE, "readwrite"); } catch (_) { return res(); }
+    const os = tx.objectStore(STORE);
+    for (const r of remove) { if (r.id) { try { os.delete(r.id); } catch (_) {} } }
+    tx.oncomplete = () => res(); tx.onerror = () => res();
+  });
+}
+
+/* ── State ── */
+let allHits   = [];           // working set (archive ∪ live), newest-first
+const byId    = new Map();    // id → hit object (O(1) merge, shared identity with allHits + archive)
+let dirty     = false;
+const TC      = new Map();    // assignmentId → { td, expiresMs }  (live countdown cells only)
+
+/* ── DOM Elements ── */
+const mdSel = document.getElementById("mdSel");
+const fqSel = document.getElementById("fqSel");
+const hrSel = document.getElementById("hrSel");
+const tmSel = document.getElementById("tmSel");
+const wkSel = document.getElementById("wkSel");
+const stSel = document.getElementById("stSel");
+
+/* ── Small helpers ── */
+function tsOf(v) { const t = v ? new Date(v).getTime() : 0; return isNaN(t) ? 0 : t; }
+function num(v)  { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+/* ── Effective status (display only — never mutates stored truth) ──
+   An "active" HIT whose expiry wall-clock has passed is shown as Expired.
+   We compute this on the fly instead of overwriting h.status, so a real
+   server update (e.g. it was actually Submitted) is never lost to a guess. */
+function effStatus(h, nowMs) {
+  if (h.status === "active" && h.expiresAt && tsOf(h.expiresAt) < nowMs) return "expired";
+  return h.status || "active";
+}
+
+/* ── MEMORY ENGINE: restore static dropdown selections immediately ── */
+function loadStaticMemory() {
+  const md = localStorage.getItem("mrp_dash_md");
+  const fq = localStorage.getItem("mrp_dash_fq");
+  const hr = localStorage.getItem("mrp_dash_hr");
+  const st = localStorage.getItem("mrp_dash_st");
+  if (md !== null) mdSel.value = md;
+  if (fq !== null) fqSel.value = fq;
+  if (hr !== null) hrSel.value = hr;
+  if (st !== null) stSel.value = st;
+  updateControlVisibility();
+}
+
+function updateControlVisibility() {
+  const isHistory = mdSel.value === "history";
+  document.getElementById("fqLbl").textContent = isHistory ? "GROUP" : "VIEW";
+  document.getElementById("hrC").style.display =
+    (!isHistory && fqSel.value === "hourly") ? "flex" : "none";
+}
+loadStaticMemory();
+
+/* ── LIVE FILTERING ENGINE: instant update on change ── */
+function attachLiveFilters() {
+  [mdSel, fqSel, hrSel, tmSel, wkSel, stSel].forEach(select => {
+    select.addEventListener("change", e => {
+      localStorage.setItem("mrp_dash_" + e.target.id.replace("Sel", ""), e.target.value);
+      updateControlVisibility();
+      if (e.target.id === "mdSel") TC.clear();   // leaving live view ⇒ drop countdown cells
+      applyFilters();
+    });
+  });
+}
+attachLiveFilters();
+
+/* ── Export / Reset memory ── */
+document.getElementById("expBtn").addEventListener("click", async () => {
+  let rows = await archiveGetAll();
+  if (!rows || !rows.length) rows = allHits;
+  rows = rows.slice().sort((a, b) => tsOf(b.acceptedAt) - tsOf(a.acceptedAt));
+  download("mturk_hits_" + new Date().toISOString().slice(0, 10) + ".csv", toCSV(rows), "text/csv");
+});
+document.getElementById("resetBtn").addEventListener("click", async () => {
+  if (!confirm("Erase ALL saved tracking memory on THIS device?\n\nThis cannot be undone. (Tip: Export CSV first.)")) return;
+  await archiveClear();
+  allHits = []; byId.clear();
+  updateMemChip(); applyFilters();
+});
+
+function toCSV(rows) {
+  const cols = ["id","workerId","username","teamname","requester","title","reward",
+                "status","acceptedAt","submittedAt","returnedAt","expiresAt","lastSyncAt"];
+  const esc = v => { v = (v === null || v === undefined) ? "" : String(v);
+    return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const head = cols.join(",");
+  const body = rows.map(r => cols.map(c => esc(r[c])).join(",")).join("\n");
+  return head + "\n" + body;
+}
+function download(name, text, type) {
+  const blob = new Blob([text], { type: type || "text/plain" });
+  const url  = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function updateMemChip() {
+  const el = document.getElementById("memChip");
+  if (el) el.textContent = "🧠 " + byId.size.toLocaleString() + " saved";
+}
+
+/* ── Clock ── */
+(function tick() {
+  document.getElementById("clk").textContent =
+    new Date().toLocaleTimeString([], { hour12: false });
+  setTimeout(tick, 1000 - Date.now() % 1000);
+})();
+
+/* ── Second ticker: only updates live time-left cells ── */
+setInterval(() => {
+  const now = Date.now();
+  TC.forEach((d, id) => {
+    if (!document.contains(d.td)) { TC.delete(id); return; }
+    d.td.innerHTML = tlHtml(d.expiresMs - now);
+  });
+}, 1000);
+
+/* ─────────────────────────────────────────────────────────
+   Real-time data engine: REST snapshot + SSE push, merged into memory
+───────────────────────────────────────────────────────── */
+const HITS_LIMIT = 200;     // mirror server limit(200)
+const POLL_MS    = 5000;    // base interval; full safety refresh every 60s
+
+function markRender() {
+  if (!dirty) {
+    dirty = true;
+    requestAnimationFrame(() => {
+      dirty = false;
+      rebuildSelects();
+      updateMemChip();
+      applyFilters();
+    });
+  }
+  document.getElementById("sync").textContent =
+    "Synced: " + new Date().toLocaleTimeString();
+}
+
+/* Merge one hit into memory (in place ⇒ allHits, byId and the archived
+   object keep the same identity). Server/SSE fields overwrite older ones;
+   fields absent from a partial update are preserved. Returns the record. */
+function mergeHit(hit) {
+  if (!hit) return null;
+  const id = hit.id || hit.assignmentId;
+  if (!id) return null;
+  hit.id = id;
+  const ex = byId.get(id);
+  if (ex) { Object.assign(ex, hit); return ex; }
+  byId.set(id, hit);
+  allHits.unshift(hit);
+  return hit;
+}
+
+// Full snapshot (newest 200) — first load + periodic safety refresh.
+async function fetchAllHits() {
+  try {
+    const res = await fetch(api(`/hits.json?limit=${HITS_LIMIT}&_=${Date.now()}`), { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const merged = [];
+    (Array.isArray(data) ? data : []).forEach(h => { const m = mergeHit(h); if (m) merged.push(m); });
+    await archivePutMany(merged);
+    showErr(null);
+    markRender();
+  } catch (e) {
+    // Server down? We still have the saved memory, so keep showing history.
+    showErr("Server error: " + e.message + " — showing saved memory. Is the Panda Commander server running?");
+    document.getElementById("sync").textContent = "⚠️ Offline · showing saved memory";
+  }
+}
+
+// Apply a single hit update locally (every SSE event)
+function upsertLocalHit(hit) {
+  const m = mergeHit(hit);
+  if (!m) return;
+  archivePutMany([m]);
+  markRender();
+}
+
+function deleteLocalHit(id) {
+  if (!id) return;
+  byId.delete(id);
+  allHits = allHits.filter(h => h.id !== id);
+  archiveDelete(id);
+  markRender();
+}
+
+/* ── SSE stream ── */
+let sseSource = null;
+let sseRetryDelay = 2000;
+
+function startSSE() {
+  try { sseSource?.close(); } catch (_) {}
+  sseSource = new EventSource(api("/hits/stream"));
+
+  sseSource.addEventListener("ready", () => { sseRetryDelay = 2000; });
+  sseSource.addEventListener("hit-update", ev => {
+    try { upsertLocalHit(JSON.parse(ev.data)); } catch (_) {}
+  });
+  sseSource.addEventListener("hit-delete", ev => {
+    try { deleteLocalHit(JSON.parse(ev.data).id); } catch (_) {}
+  });
+  // NOTE: "hit-clear" only clears the LIVE working set + render. It does NOT
+  // wipe the archive — your historical memory must survive a server clear.
+  sseSource.addEventListener("hit-clear", () => {
+    allHits = []; byId.clear(); markRender();
+    archiveGetAll().then(rows => { seedFrom(rows); markRender(); });
+  });
+  sseSource.onerror = () => {
+    setTimeout(() => {
+      if (!sseSource || sseSource.readyState === 2) {
+        sseRetryDelay = Math.min(sseRetryDelay * 1.5, 30000);
+        startSSE();
+      }
+    }, sseRetryDelay);
+  };
+}
+
+/* ── Seed working set from an array of archived rows ── */
+function seedFrom(rows) {
+  if (!rows || !rows.length) return;
+  rows.sort((a, b) => tsOf(b.acceptedAt) - tsOf(a.acceptedAt));
+  rows.forEach(h => {
+    const id = h.id || h.assignmentId;
+    if (!id) return;
+    h.id = id;
+    if (!byId.has(id)) { byId.set(id, h); allHits.push(h); }
+  });
+}
+
+/* ── Boot: memory first (instant, offline-proof), then live ── */
+(async function boot() {
+  const rows = await archiveGetAll();
+  seedFrom(rows);
+  updateMemChip();
+  markRender();
+  await archivePrune();
+
+  fetchAllHits();
+  startSSE();
+  setInterval(fetchAllHits, POLL_MS * 12);   // safety net every 60s
+})();
+
+/* ── Error banner ── */
+function showErr(msg) {
+  const el = document.getElementById("errBanner");
+  if (msg) { el.textContent = "⚠️ " + msg; el.style.display = "block"; }
+  else     { el.style.display = "none"; }
+}
+
+/* ── DYNAMIC DROPDOWNS (with smart memory injection) ── */
+const _selSig = {};
+function rebuildSelects() {
+  const teams = [...new Set(allHits.map(h => h.teamname || "No Team"))].sort();
+  const wrks  = [...new Set(allHits.map(h => h.username || h.workerId || "?"))].sort();
+  fillDynamic("tmSel", teams, "All Teams");
+  fillDynamic("wkSel", wrks,  "All Workers");
+}
+function fillDynamic(id, items, ph) {
+  const sig = items.join("");
+  if (_selSig[id] === sig) return;   // option set unchanged ⇒ don't disturb the open dropdown
+  _selSig[id] = sig;
+
+  const s = document.getElementById(id);
+  const memKey = "mrp_dash_" + id.replace("Sel", "");
+  let savedVal = localStorage.getItem(memKey);
+  if (savedVal === null) savedVal = "";
+
+  s.innerHTML = `<option value="">${x(ph)}</option>` +
+    items.map(v => `<option value="${x(v)}"${v === savedVal ? " selected" : ""}>${x(v)}</option>`).join("");
+  s.value = (savedVal && items.includes(savedVal)) ? savedVal : "";
+}
+
+/* ── Filter + render ── */
+function applyFilters() {
+  const mode = mdSel.value;          // "live" | "history"
+  const freq = fqSel.value;
+  const hrs  = parseInt(hrSel.value || "1", 10) || 1;
+  const team = tmSel.value;
+  const wrk  = wkSel.value;
+  const sts  = stSel.value;
+  const now  = new Date();
+  const nowMs = now.getTime();
+
+  let hits = allHits;
+
+  // Rolling time window applies to the LIVE view only. History always shows
+  // the complete saved record, grouped by the chosen bucket.
+  if (mode === "live") {
+    const MS = { hourly: hrs * 3600e3, daily: 86400e3, monthly: 30 * 86400e3, yearly: 365 * 86400e3 };
+    const cut = MS[freq] ? new Date(now - MS[freq]) : null;
+    if (cut) hits = hits.filter(h => h.acceptedAt && new Date(h.acceptedAt) >= cut);
+  }
+
+  if (team) hits = hits.filter(h => (h.teamname || "No Team") === team);
+  if (wrk)  hits = hits.filter(h => (h.username || h.workerId) === wrk);
+  if (sts)  hits = hits.filter(h => effStatus(h, nowMs) === sts);
+
+  renderStats(hits, now);
+  if (mode === "history") renderHistory(hits, now);
+  else                    renderTeams(hits, now);
+}
+
+/* ── Stats ── */
+function renderStats(hits, now) {
+  const nowMs = now.getTime();
+  let actHits = 0, subN = 0, mRn = 0, aRn = 0, earn = 0;
+  const actW = new Set(), allW = new Set(), teams = new Set();
+
+  hits.forEach(h => {
+    const es = effStatus(h, nowMs);
+    allW.add(h.workerId);
+    teams.add(h.teamname || "No Team");
+    if      (es === "active")          { actHits++; actW.add(h.workerId); }
+    else if (es === "submitted")       { subN++; earn += num(h.reward); }
+    else if (es === "manual_returned") { mRn++; }
+    else if (es === "auto_returned" || es === "expired" || es === "timed_out") { aRn++; }
+  });
+
+  set("sAct",  actW.size);
+  set("sActS", actHits + " active HIT" + (actHits !== 1 ? "s" : ""));
+  set("sTot",  hits.length);
+  set("sEar",  "$" + earn.toFixed(2));
+  set("sWrk",  allW.size);
+  set("sTms",  teams.size);
+  set("sSub",  subN);
+  set("sMR",   mRn);
+  set("sAR",   aRn);
+}
+function set(id, v) {
+  const el = document.getElementById(id);
+  if (el && el.textContent !== String(v)) el.textContent = v;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LIVE VIEW — team blocks
+═══════════════════════════════════════════════════════════ */
+function renderTeams(hits, now) {
+  const body = document.getElementById("body");
+  const nowMs = now.getTime();
+
+  if (!hits.length) {
+    TC.clear();
+    body.innerHTML = `<div class="empty">
+      <div class="empty-i">🔍</div>No active/recent HITs for this filter.
+      <div class="empty-s">HITs appear here live as workers accept them. Switch MODE → History for past days.</div>
+    </div>`;
+    return;
+  }
+
+  const map = new Map();
+  hits.forEach(h => {
+    const t = h.teamname || "No Team";
+    if (!map.has(t)) map.set(t, []);
+    map.get(t).push(h);
+  });
+  const order = [...map.keys()].sort((a, b) => a.localeCompare(b));
+
+  const collapsed = new Set([...body.querySelectorAll(".team.col")].map(e => e.dataset.team));
+
+  const curFp = [...body.querySelectorAll(".team")].map(e => {
+    const ids = [...e.querySelectorAll("tbody tr[data-hit-id]")].map(tr => tr.dataset.hitId);
+    return (e.dataset.team || "") + "#" + ids.join(",");
+  }).join("|");
+  const newFp = order.map(t => t + "#" + map.get(t).map(h => h.id || "").join(",")).join("|");
+
+  if (curFp !== newFp) {
+    TC.clear();
+    const frag = document.createDocumentFragment();
+    order.forEach(t => frag.appendChild(buildTeam(t, map.get(t), now, collapsed.has(t))));
+    body.innerHTML = "";
+    body.appendChild(frag);
+    regTC(body);
+    attachToggles(body);
+  } else {
+    order.forEach(t => {
+      const bl = body.querySelector(`.team[data-team="${CSS.escape(t)}"]`);
+      if (bl) softUpdate(bl, map.get(t), now);
+    });
+  }
+}
+
+function buildTeam(team, hits, now, isColl) {
+  const nowMs = now.getTime();
+  const c = countByStatus(hits, nowMs);
+
+  const el = document.createElement("div");
+  el.className    = "team" + (isColl ? " col" : "");
+  el.dataset.team = team;
+
+  el.innerHTML = `
+  <div class="thdr">
+    <div class="tn">
+      <span class="chv">▾</span>🏷 ${x(team)}
+      <span style="color:var(--tx3);font-size:9px">(${hits.length})</span>
+    </div>
+    <div class="pills">
+      <span class="pill pa">🟢 ${c.active} Active</span>
+      <span class="pill ps">✓ ${c.submitted} Done</span>
+      <span class="pill pm">↩ M:${c.mReturn}</span>
+      <span class="pill pp">⟲ A:${c.aReturn}</span>
+      <span class="pill pe">$${c.earned.toFixed(2)}</span>
+    </div>
+  </div>
+  <div class="tbody"><div class="tw">
+    <table>
+      <thead><tr>
+        <th>Worker ID</th><th>Username</th><th>Requester</th>
+        <th>Title</th><th>Reward</th><th>Accepted</th>
+        <th>Time Left</th><th>Status</th>
+      </tr></thead>
+      <tbody>${hits.map(h => buildRow(h, now)).join("")}</tbody>
+    </table>
+  </div></div>`;
+  return el;
+}
+
+const LABEL = {
+  active: "Active", submitted: "Submitted",
+  manual_returned: "M Return", auto_returned: "A Return",
+  timed_out: "Timed Out", expired: "Expired"
+};
+
+function buildRow(h, now) {
+  const acc = h.acceptedAt ? new Date(h.acceptedAt) : null;
+  const accStr = acc
+    ? acc.toLocaleDateString("en-GB") + " " +
+      acc.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
+    : "—";
+
+  const es    = effStatus(h, now.getTime());
+  const exMs  = h.expiresAt ? new Date(h.expiresAt).getTime() : 0;
+  const diff  = exMs - now.getTime();
+  const isAct = es === "active" && diff > 0;
+
+  const tdA = isAct ? `class="tl-td" data-exp="${exMs}" data-id="${x(h.id)}"` : `class="tl-td"`;
+
+  const uname = h.username || h.workerId || "—";
+  const unameStyle = /^A[A-Z0-9]{9,}$/.test(uname)
+    ? "color:var(--tx2);font-family:var(--mono);font-size:11px" : "";
+
+  return `<tr data-hit-id="${x(h.id || "")}">
+    <td class="cw">${x(h.workerId || "—")}</td>
+    <td class="cn"><span style="${unameStyle}">${x(uname)}</span></td>
+    <td class="cr">${x(h.requester || "—")}</td>
+    <td><div class="ct" title="${x(h.title || "")}">${x(h.title || "—")}</div></td>
+    <td class="cv">$${num(h.reward).toFixed(2)}</td>
+    <td class="ca">${accStr}</td>
+    <td ${tdA}>${isAct ? tlHtml(diff) : `<span class="tl txx">—</span>`}</td>
+    <td><span class="badge ${es}">${LABEL[es] || es}</span></td>
+  </tr>`;
+}
+
+function tlHtml(diff) {
+  if (diff <= 0) return `<span class="tl txx">Expired</span>`;
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  const str = h > 0 ? `${h}:${p(m)}:${p(s)}` : `${m}:${p(s)}`;
+  const cls = diff < 60000 ? "tdg" : diff < 300000 ? "twn" : "tok";
+  return `<span class="tl ${cls}">${str}</span>`;
+}
+function p(n) { return String(n).padStart(2, "0"); }
+
+function regTC(root) {
+  root.querySelectorAll("td.tl-td[data-exp]").forEach(td => {
+    const id = td.dataset.id;
+    const ex = parseInt(td.dataset.exp, 10) || 0;
+    if (id && ex) TC.set(id, { td, expiresMs: ex });
+  });
+}
+function attachToggles(root) {
+  root.querySelectorAll(".thdr").forEach(h => {
+    h.addEventListener("click", () => h.closest(".team").classList.toggle("col"));
+  });
+}
+
+function softUpdate(bl, hits, now) {
+  const nowMs = now.getTime();
+  const c = countByStatus(hits, nowMs);
+
+  const ps = bl.querySelectorAll(".pill");
+  if (ps[0]) ps[0].textContent = "🟢 " + c.active + " Active";
+  if (ps[1]) ps[1].textContent = "✓ " + c.submitted + " Done";
+  if (ps[2]) ps[2].textContent = "↩ M:" + c.mReturn;
+  if (ps[3]) ps[3].textContent = "⟲ A:" + c.aReturn;
+  if (ps[4]) ps[4].textContent = "$" + c.earned.toFixed(2);
+
+  hits.forEach((h, i) => {
+    const tr = bl.querySelectorAll("tbody tr")[i];
+    if (!tr) return;
+    const es = effStatus(h, nowMs);
+
+    const b = tr.querySelector(".badge");
+    if (b) {
+      const nl = LABEL[es] || es;
+      const nc = "badge " + es;
+      if (b.textContent !== nl) b.textContent = nl;
+      if (b.className   !== nc) b.className   = nc;
+    }
+
+    const td = tr.querySelector("td.tl-td");
+    if (td) {
+      const exMs  = h.expiresAt ? new Date(h.expiresAt).getTime() : 0;
+      const isAct = es === "active" && exMs > nowMs;
+      if (isAct) {
+        td.dataset.exp = exMs;
+        td.dataset.id  = h.id;
+        TC.set(h.id, { td, expiresMs: exMs });
+      } else {
+        if (td.dataset.id) TC.delete(td.dataset.id);
+        TC.delete(h.id);
+        td.removeAttribute("data-exp");
+        td.removeAttribute("data-id");
+        td.innerHTML = `<span class="tl txx">—</span>`;
+      }
+    }
+  });
+}
+
+/* Shared status counter for a list of hits (display-effective status). */
+function countByStatus(hits, nowMs) {
+  let active = 0, submitted = 0, mReturn = 0, aReturn = 0, earned = 0;
+  hits.forEach(h => {
+    const es = effStatus(h, nowMs);
+    if      (es === "active")          active++;
+    else if (es === "submitted")       { submitted++; earned += num(h.reward); }
+    else if (es === "manual_returned") mReturn++;
+    else if (es === "auto_returned" || es === "expired" || es === "timed_out") aReturn++;
+  });
+  return { active, submitted, mReturn, aReturn, earned, total: hits.length };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HISTORY VIEW — day / month / year breakdown (the "memory")
+   For each bucket: per-team submitted / earned / returns / expired.
+   The date a HIT counts toward is the date of its ACTUAL event:
+     submitted → submittedAt, returns → returnedAt, expired → expiresAt,
+     still active → acceptedAt.
+═══════════════════════════════════════════════════════════ */
+const WD = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function eventAt(h, es) {
+  if (es === "submitted")        return h.submittedAt || h.acceptedAt || h.lastSyncAt;
+  if (es === "manual_returned")  return h.returnedAt  || h.acceptedAt;
+  if (es === "auto_returned")    return h.returnedAt  || h.lastSyncAt || h.acceptedAt;
+  if (es === "expired" || es === "timed_out") return h.expiresAt || h.acceptedAt;
+  return h.acceptedAt || h.lastSyncAt;   // active / unknown
+}
+
+function bucketOf(d, gran) {
+  const Y = d.getFullYear(), M = d.getMonth(), D = d.getDate(), H = d.getHours();
+  if (gran === "hourly")
+    return { key: `${Y}${p2(M+1)}${p2(D)}${p2(H)}`,
+             label: `${WD[d.getDay()]} ${p2(D)} ${MO[M]} ${Y} · ${p2(H)}:00`,
+             ts: new Date(Y, M, D, H).getTime() };
+  if (gran === "monthly")
+    return { key: `${Y}${p2(M+1)}`, label: `${MO[M]} ${Y}`, ts: new Date(Y, M, 1).getTime() };
+  if (gran === "yearly")
+    return { key: `${Y}`, label: `${Y}`, ts: new Date(Y, 0, 1).getTime() };
+  return { key: `${Y}${p2(M+1)}${p2(D)}`,
+           label: `${WD[d.getDay()]}, ${p2(D)} ${MO[M]} ${Y}`,
+           ts: new Date(Y, M, D).getTime() };
+}
+function p2(n) { return String(n).padStart(2, "0"); }
+
+function newAgg() { return { active:0, submitted:0, mReturn:0, aReturn:0, earned:0, total:0 }; }
+function addAgg(a, h, es) {
+  a.total++;
+  if      (es === "active")          a.active++;
+  else if (es === "submitted")       { a.submitted++; a.earned += num(h.reward); }
+  else if (es === "manual_returned") a.mReturn++;
+  else if (es === "auto_returned" || es === "expired" || es === "timed_out") a.aReturn++;
+}
+
+function renderHistory(hits, now) {
+  const body = document.getElementById("body");
+  TC.clear();   // no live countdowns in history mode
+
+  if (!hits.length) {
+    body.innerHTML = `<div class="empty">
+      <div class="empty-i">🗓</div>No saved history for this filter yet.
+      <div class="empty-s">As workers submit / return / expire HITs, each day is recorded here automatically.</div>
+    </div>`;
+    return;
+  }
+
+  const gran  = fqSel.value;
+  const nowMs = now.getTime();
+  const buckets = new Map();
+
+  hits.forEach(h => {
+    const es   = effStatus(h, nowMs);
+    const when = eventAt(h, es);
+    const d    = when ? new Date(when) : null;
+    if (!d || isNaN(d.getTime())) return;
+
+    const bk = bucketOf(d, gran);
+    let b = buckets.get(bk.key);
+    if (!b) { b = { key: bk.key, label: bk.label, ts: bk.ts, total: newAgg(), teams: new Map() }; buckets.set(bk.key, b); }
+
+    const team = h.teamname || "No Team";
+    let ta = b.teams.get(team);
+    if (!ta) { ta = newAgg(); b.teams.set(team, ta); }
+    addAgg(b.total, h, es);
+    addAgg(ta,      h, es);
+  });
+
+  const order = [...buckets.values()].sort((a, b) => b.ts - a.ts);   // newest first
+
+  // Relative day tags
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayTs = today.getTime(), yestTs = todayTs - 86400e3;
+
+  // Preserve collapse state; on first paint expand newest 2, collapse the rest.
+  const prevCollapsed = new Set(
+    [...body.querySelectorAll(".team.col")].map(e => e.dataset.bucket).filter(Boolean)
+  );
+  const firstRender = !body.querySelector(".team[data-bucket]");
+
+  const frag = document.createDocumentFragment();
+  order.forEach((b, i) => {
+    const isColl = firstRender ? i >= 2 : prevCollapsed.has(b.key);
+    frag.appendChild(buildDayCard(b, isColl, gran === "daily" ? (b.ts === todayTs ? "Today" : b.ts === yestTs ? "Yesterday" : "") : ""));
+  });
+  body.innerHTML = "";
+  body.appendChild(frag);
+  attachToggles(body);
+}
+
+function buildDayCard(b, isColl, relTag) {
+  const t = b.total;
+  const teams = [...b.teams.entries()].sort((x, y) => (y[1].earned - x[1].earned) || (y[1].total - x[1].total));
+
+  const el = document.createElement("div");
+  el.className      = "team day" + (isColl ? " col" : "");
+  el.dataset.bucket = b.key;
+
+  const rows = teams.map(([name, a]) => `
+    <tr>
+      <td class="cn">🏷 ${x(name)}</td>
+      <td><span class="cnum csub ${a.submitted ? "" : "czero"}">${a.submitted}</span></td>
+      <td class="cearn">$${a.earned.toFixed(2)}</td>
+      <td><span class="cnum cmr ${a.mReturn ? "" : "czero"}">${a.mReturn}</span></td>
+      <td><span class="cnum car ${a.aReturn ? "" : "czero"}">${a.aReturn}</span></td>
+      <td><span class="cnum cac ${a.active ? "" : "czero"}">${a.active}</span></td>
+      <td><span class="cnum">${a.total}</span></td>
+    </tr>`).join("");
+
+  el.innerHTML = `
+  <div class="thdr">
+    <div class="tn">
+      <span class="chv">▾</span>🗓 ${x(b.label)}
+      ${relTag ? `<span class="day-tag">${x(relTag)}</span>` : ""}
+      <span style="color:var(--tx3);font-size:9px">(${t.total})</span>
+    </div>
+    <div class="pills">
+      <span class="pill ps">✓ ${t.submitted} Done</span>
+      <span class="pill pe">$${t.earned.toFixed(2)}</span>
+      <span class="pill pm">↩ M:${t.mReturn}</span>
+      <span class="pill pp">⟲ A:${t.aReturn}</span>
+      ${t.active ? `<span class="pill pa">🟢 ${t.active} Active</span>` : ""}
+    </div>
+  </div>
+  <div class="tbody"><div class="tw">
+    <table>
+      <thead><tr>
+        <th>Team</th><th>Submitted</th><th>Earned</th>
+        <th>M Ret</th><th>A Ret</th><th>Active</th><th>Total</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div></div>`;
+  return el;
+}
+
+/* ── XSS escape ── */
+function x(s) {
+  return String(s === null || s === undefined ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+</script>
+</body>
+</html>
