@@ -531,10 +531,21 @@ setInterval(() => {
 }, 1000);
 
 /* ─────────────────────────────────────────────────────────
-   Real-time data engine: REST snapshot + SSE push, merged into memory
+   Real-time data engine: SERVER-AUTHORITATIVE.
+   The server holds the complete history and is the single source of truth, so
+   every device shows the SAME data. The local IndexedDB archive is now only a
+   warm-start / offline cache. On boot we (1) seed from cache for an instant
+   paint, (2) upload this browser's cache to the server once (migration — so a
+   browser that accumulated data on its own contributes it instead of diverging),
+   (3) pull the full server history to converge, then stay live via SSE with a
+   small delta poll as a safety net.
 ───────────────────────────────────────────────────────── */
-const HITS_LIMIT = 200;     // mirror server limit(200)
-const POLL_MS    = 5000;    // base interval; full safety refresh every 60s
+const POLL_MS    = 5000;    // base interval; delta safety refresh every 60s
+let   lastSyncTs = 0;       // newest server `updatedAt` seen (ms) — drives delta pulls
+
+function trackSyncTs(rows) {
+  for (const h of rows) { const t = tsOf(h.updatedAt); if (t > lastSyncTs) lastSyncTs = t; }
+}
 
 function markRender() {
   if (!dirty) {
@@ -565,21 +576,49 @@ function mergeHit(hit) {
   return hit;
 }
 
-// Full snapshot (newest 200) — first load + periodic safety refresh.
-async function fetchAllHits() {
+// Pull from the server. full=true → entire history (reconciles a fresh or
+// out-of-date device); full=false → only records changed since lastSyncTs.
+async function pullFromServer(full) {
   try {
-    const res = await fetch(api(`/hits.json?limit=${HITS_LIMIT}&_=${Date.now()}`), { cache: "no-store" });
+    const qs = full
+      ? "limit=0"
+      : "since=" + encodeURIComponent(new Date(lastSyncTs || 0).toISOString());
+    const res = await fetch(api(`/hits.json?${qs}&_=${Date.now()}`), { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const merged = [];
     (Array.isArray(data) ? data : []).forEach(h => { const m = mergeHit(h); if (m) merged.push(m); });
-    await archivePutMany(merged);
+    trackSyncTs(merged);
+    if (merged.length) archivePutMany(merged);
     showErr(null);
     markRender();
   } catch (e) {
-    // Server down? We still have the saved memory, so keep showing history.
-    showErr("Server error: " + e.message + " — showing saved memory. Is the Panda Commander server running?");
+    // Server unreachable? We still have the cached memory, so keep showing it.
+    showErr("Server error: " + e.message + " — showing saved memory. Is the tracker server running?");
     document.getElementById("sync").textContent = "⚠️ Offline · showing saved memory";
+  }
+}
+
+// ONE-TIME migration: push this browser's locally-cached HITs up to the server
+// so nothing that was only ever stored in this one browser is lost, and every
+// device converges on the same complete history. The server merges with status
+// precedence, so this can NEVER downgrade a real Submitted to Active/Expired.
+async function migrateLocalToServer(rows) {
+  try {
+    if (localStorage.getItem("mrp_migrated_v2") === "1") return;
+    if (!rows || !rows.length) { localStorage.setItem("mrp_migrated_v2", "1"); return; }
+    for (let i = 0; i < rows.length; i += 500) {
+      const chunk = rows.slice(i, i + 500);
+      const res = await fetch(api("/hits/bulk"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(chunk)
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+    }
+    localStorage.setItem("mrp_migrated_v2", "1");
+  } catch (_) {
+    // Server down — leave the flag unset so we retry on the next load. Harmless.
   }
 }
 
@@ -587,6 +626,7 @@ async function fetchAllHits() {
 function upsertLocalHit(hit) {
   const m = mergeHit(hit);
   if (!m) return;
+  trackSyncTs([m]);
   archivePutMany([m]);
   markRender();
 }
@@ -642,17 +682,19 @@ function seedFrom(rows) {
   });
 }
 
-/* ── Boot: memory first (instant, offline-proof), then live ── */
+/* ── Boot: cache first (instant, offline-proof), then converge on the server ── */
 (async function boot() {
   const rows = await archiveGetAll();
   seedFrom(rows);
+  trackSyncTs(rows);
   updateMemChip();
   markRender();
   await archivePrune();
 
-  fetchAllHits();
-  startSSE();
-  setInterval(fetchAllHits, POLL_MS * 12);   // safety net every 60s
+  startSSE();                         // live channel first, so no events are missed
+  await migrateLocalToServer(rows);   // one-time: this browser's memory → server
+  await pullFromServer(true);         // full history → all devices converge
+  setInterval(() => pullFromServer(false), POLL_MS * 12);  // delta safety net / 60s
 })();
 
 /* ── Error banner ── */
