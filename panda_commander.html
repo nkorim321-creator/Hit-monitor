@@ -1,0 +1,3331 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <meta name="theme-color" content="#0a0e1a">
+    <title>Panda Commander</title>
+    <!-- EmailJS SDK for OTP emails (loaded async, gracefully degrades to demo mode if blocked) -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <style>
+        :root {
+            --bg-base: #0a0e1a;
+            --bg-card: rgba(20, 27, 45, 0.85);
+            --bg-elevated: rgba(30, 41, 59, 0.5);
+            --bg-input: rgba(15, 23, 42, 0.6);
+            --border: rgba(148, 163, 184, 0.12);
+            --border-hover: rgba(148, 163, 184, 0.22);
+            --text-primary: #f8fafc;
+            --text-secondary: #cbd5e1;
+            --text-muted: #64748b;
+            --accent: #06b6d4;
+            --accent-hover: #22d3ee;
+            --accent-glow: rgba(6, 182, 212, 0.35);
+            --success: #10b981;
+            --success-glow: rgba(16, 185, 129, 0.4);
+            --danger: #f43f5e;
+            --danger-glow: rgba(244, 63, 94, 0.4);
+            --warning: #f59e0b;
+            --purple: #a855f7;
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 18px;
+            --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body { height: 100%; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: var(--bg-base);
+            background-image:
+                radial-gradient(ellipse 800px 600px at 20% 0%, rgba(6, 182, 212, 0.10) 0%, transparent 50%),
+                radial-gradient(ellipse 700px 500px at 80% 100%, rgba(168, 85, 247, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse 600px 400px at 0% 100%, rgba(16, 185, 129, 0.05) 0%, transparent 50%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 24px 14px 60px;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            font-size: 14px;
+        }
+
+        .box {
+            background: var(--bg-card);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--border);
+            padding: 26px;
+            border-radius: var(--radius-lg);
+            width: 100%;
+            max-width: 540px;
+            margin: 0 auto;
+            box-shadow:
+                0 1px 0 rgba(255, 255, 255, 0.04) inset,
+                0 24px 60px rgba(0, 0, 0, 0.5),
+                0 8px 18px rgba(0, 0, 0, 0.3);
+            text-align: left;
+        }
+
+        /* === HEADER === */
+        .header { text-align: center; margin-bottom: 22px; }
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .brand-icon {
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(168, 85, 247, 0.2));
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(6, 182, 212, 0.15);
+        }
+        .brand-text { text-align: left; }
+        .brand-title {
+            font-size: 18px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #f8fafc 0%, #cbd5e1 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.3px;
+            line-height: 1.2;
+        }
+        .brand-subtitle {
+            font-size: 11px;
+            color: var(--text-muted);
+            letter-spacing: 0.4px;
+        }
+
+        /* Active team badge — the "hero" pill */
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            padding: 6px 8px 6px 14px;
+            border-radius: 100px;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all var(--transition);
+        }
+        .hero-badge .live-dot {
+            width: 7px;
+            height: 7px;
+            background: var(--success);
+            border-radius: 50%;
+            margin-right: 9px;
+            box-shadow: 0 0 0 0 var(--success-glow);
+            animation: livePulse 2s infinite;
+        }
+        @keyframes livePulse {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+            70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .hero-badge .team-text { color: var(--text-primary); }
+        .hero-badge .count-pill {
+            background: rgba(6, 182, 212, 0.15);
+            color: var(--accent-hover);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 9px;
+            border-radius: 100px;
+            margin-left: 10px;
+        }
+
+        /* === SYNC BAR === */
+        .sync-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 10px 12px;
+            margin-bottom: 14px;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: 12px;
+        }
+        .sync-info {
+            flex: 1;
+            min-width: 0;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sync-info .sync-icon {
+            color: var(--accent);
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+        .sync-info .sync-text { color: var(--text-secondary); font-weight: 500; }
+        .sync-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+        /* === BANNERS === */
+        .banner {
+            border-radius: var(--radius-md);
+            padding: 12px 14px;
+            margin: 10px 0;
+            font-size: 13px;
+            font-weight: 500;
+            display: none;
+            align-items: flex-start;
+            gap: 10px;
+            line-height: 1.5;
+        }
+        .banner.show { display: flex; }
+        .banner-loading {
+            background: rgba(6, 182, 212, 0.08);
+            border: 1px solid rgba(6, 182, 212, 0.25);
+            color: #67e8f9;
+        }
+        .banner-error {
+            background: rgba(244, 63, 94, 0.08);
+            border: 1px solid rgba(244, 63, 94, 0.3);
+            color: #fda4af;
+        }
+        .banner-icon { font-size: 16px; flex-shrink: 0; }
+
+        /* === FORM CONTROLS === */
+        .field { margin: 14px 0; }
+        .field-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.7px;
+            color: var(--text-muted);
+            margin-bottom: 7px;
+        }
+        .field-label .lock-icon-mini {
+            color: var(--accent);
+            font-size: 11px;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 500;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 12px 14px;
+            font-size: 14px;
+            font-family: inherit;
+            font-weight: 500;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            transition: all var(--transition);
+        }
+        input::placeholder, textarea::placeholder { color: var(--text-muted); }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+            background: rgba(6, 182, 212, 0.05);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        input[readonly] {
+            background: rgba(15, 23, 42, 0.4);
+            color: var(--text-secondary);
+            cursor: not-allowed;
+            border-style: dashed;
+        }
+
+        select {
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%2364748b'%3E%3Cpath d='M4.427 6.427a.6.6 0 0 1 .848 0L8 9.151l2.725-2.724a.6.6 0 0 1 .848.848L8.424 10.424a.6.6 0 0 1-.848 0L4.427 7.275a.6.6 0 0 1 0-.848z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            background-size: 18px;
+            padding-right: 38px;
+            cursor: pointer;
+        }
+
+        /* Dark dropdown options (fix the white-flash issue when select is opened) */
+        select option {
+            background-color: #0f172a;
+            color: #f8fafc;
+            padding: 8px;
+            font-size: 14px;
+        }
+        select option:checked, select option:hover {
+            background-color: #1e293b;
+            color: #f8fafc;
+        }
+        select option:disabled {
+            color: var(--text-muted);
+        }
+
+        /* === BUTTONS === */
+        button {
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 13px;
+            border: none;
+            border-radius: var(--radius-sm);
+            padding: 10px 16px;
+            cursor: pointer;
+            transition: all var(--transition);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            line-height: 1;
+            white-space: nowrap;
+        }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* === ACTION BUTTONS === */
+        .action-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        /* Sub-text inside action buttons */
+        .btn-sub {
+            display: block;
+            font-size: 10px;
+            font-weight: 500;
+            opacity: 0.85;
+            margin-top: 3px;
+            letter-spacing: 0.3px;
+            text-transform: none;
+        }
+
+        /* PRIMARY: START (Collect + GoHam) */
+        .btn-start {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 13px 14px;
+            font-size: 13px;
+            font-weight: 700;
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+            flex-direction: column;
+            line-height: 1.2;
+        }
+        .btn-start:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.45);
+        }
+        .btn-start:active:not(:disabled) { transform: translateY(0); }
+
+        /* SECONDARY: COLLECT ONLY */
+        .btn-collect {
+            background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+            color: white;
+            padding: 13px 14px;
+            font-size: 13px;
+            font-weight: 700;
+            box-shadow: 0 4px 14px rgba(6, 182, 212, 0.35);
+            flex-direction: column;
+            line-height: 1.2;
+        }
+        .btn-collect:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(6, 182, 212, 0.45);
+        }
+        .btn-collect:active:not(:disabled) { transform: translateY(0); }
+
+        /* Stop buttons share the action-grid 2-col layout with START/COLLECT */
+        .stop-grid { margin-top: 10px; }
+
+        /* DANGER: STOP ALL */
+        .btn-stop-all {
+            background: linear-gradient(135deg, #f43f5e 0%, #be123c 100%);
+            color: white;
+            padding: 13px 14px;
+            font-size: 13px;
+            font-weight: 700;
+            box-shadow: 0 4px 14px rgba(244, 63, 94, 0.35);
+            flex-direction: column;
+            line-height: 1.2;
+        }
+        .btn-stop-all:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(244, 63, 94, 0.45);
+        }
+        .btn-stop-all:active:not(:disabled) { transform: translateY(0); }
+
+        /* TARGETED: STOP SELECTED REQUESTER — softer than stop_all */
+        .btn-stop-selected {
+            background: linear-gradient(135deg, #f59e0b 0%, #c2410c 100%);
+            color: white;
+            padding: 13px 14px;
+            font-size: 13px;
+            font-weight: 700;
+            box-shadow: 0 4px 14px rgba(245, 158, 11, 0.35);
+            flex-direction: column;
+            line-height: 1.2;
+        }
+        .btn-stop-selected:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(245, 158, 11, 0.45);
+        }
+        .btn-stop-selected:active:not(:disabled) { transform: translateY(0); }
+
+        /* GHOST / SECONDARY */
+        .btn-ghost {
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            padding: 7px 12px;
+            font-size: 12px;
+        }
+        .btn-ghost:hover:not(:disabled) {
+            background: rgba(30, 41, 59, 0.9);
+            border-color: var(--border-hover);
+            color: var(--text-primary);
+        }
+
+        /* SOFT/PILL outline buttons */
+        .btn-outline-accent {
+            background: rgba(6, 182, 212, 0.1);
+            color: var(--accent-hover);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+            padding: 8px 14px;
+            font-size: 12px;
+        }
+        .btn-outline-accent:hover:not(:disabled) {
+            background: rgba(6, 182, 212, 0.18);
+            border-color: rgba(6, 182, 212, 0.5);
+        }
+
+        .btn-outline-purple {
+            background: rgba(168, 85, 247, 0.1);
+            color: #c4b5fd;
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            padding: 8px 14px;
+            font-size: 12px;
+        }
+        .btn-outline-purple:hover:not(:disabled) {
+            background: rgba(168, 85, 247, 0.18);
+            border-color: rgba(168, 85, 247, 0.5);
+        }
+
+        .btn-outline-success {
+            background: rgba(16, 185, 129, 0.12);
+            color: #6ee7b7;
+            border: 1px solid rgba(16, 185, 129, 0.35);
+            padding: 8px 14px;
+            font-size: 12px;
+        }
+        .btn-outline-success:hover:not(:disabled) {
+            background: rgba(16, 185, 129, 0.2);
+        }
+
+        .btn-outline-warn {
+            background: rgba(245, 158, 11, 0.12);
+            color: #fcd34d;
+            border: 1px solid rgba(245, 158, 11, 0.35);
+            padding: 8px 14px;
+            font-size: 12px;
+        }
+        .btn-outline-warn:hover:not(:disabled) {
+            background: rgba(245, 158, 11, 0.2);
+        }
+
+        .btn-outline-danger {
+            background: rgba(244, 63, 94, 0.1);
+            color: #fda4af;
+            border: 1px solid rgba(244, 63, 94, 0.3);
+            padding: 6px 12px;
+            font-size: 11px;
+        }
+        .btn-outline-danger:hover:not(:disabled) {
+            background: rgba(244, 63, 94, 0.18);
+        }
+
+        /* SPINNER */
+        .spinner {
+            display: inline-block;
+            width: 13px;
+            height: 13px;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            flex-shrink: 0;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* === WORKERS PANEL === */
+        .workers-toggle {
+            width: 100%;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 11px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 6px;
+        }
+        .workers-toggle:hover {
+            background: rgba(30, 41, 59, 0.9);
+            color: var(--text-primary);
+            border-color: var(--border-hover);
+        }
+        .workers-toggle .arrow {
+            transition: transform var(--transition);
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+        .workers-toggle.open .arrow { transform: rotate(180deg); }
+
+        .workers-panel {
+            background: rgba(15, 23, 42, 0.55);
+            border: 1px solid var(--border);
+            border-top: none;
+            border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+            margin-top: -1px;
+            max-height: 280px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-hover) transparent;
+        }
+        .workers-panel::-webkit-scrollbar { width: 6px; }
+        .workers-panel::-webkit-scrollbar-track { background: transparent; }
+        .workers-panel::-webkit-scrollbar-thumb {
+            background: var(--border-hover);
+            border-radius: 3px;
+        }
+        .workers-panel table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .workers-panel th {
+            text-align: left;
+            padding: 9px 12px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--text-muted);
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(8px);
+            position: sticky;
+            top: 0;
+            border-bottom: 1px solid var(--border);
+            z-index: 1;
+        }
+        .workers-panel td {
+            padding: 9px 12px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        .workers-panel tr:hover td { background: rgba(30, 41, 59, 0.5); color: var(--text-primary); }
+        .workers-panel tr:last-child td { border-bottom: none; }
+        .workers-panel code {
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, monospace;
+            font-size: 11px;
+            color: var(--accent);
+            background: rgba(6, 182, 212, 0.08);
+            padding: 2px 6px;
+            border-radius: 4px;
+            letter-spacing: 0.2px;
+        }
+        .ip-pill {
+            display: inline-block;
+            padding: 2px 8px;
+            font-size: 10px;
+            font-weight: 600;
+            background: rgba(168, 85, 247, 0.12);
+            color: #c4b5fd;
+            border: 1px solid rgba(168, 85, 247, 0.25);
+            border-radius: 100px;
+            font-family: ui-monospace, monospace;
+            letter-spacing: 0.2px;
+        }
+
+        /* === WORKER SCOPE SELECTOR === */
+        .scope-box {
+            margin-top: 14px;
+            padding: 12px;
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+        }
+        .scope-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .scope-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        .scope-btn {
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            padding: 10px 8px;
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            border-radius: var(--radius-sm);
+        }
+        .scope-btn:hover:not(:disabled) {
+            background: rgba(30, 41, 59, 0.9);
+            border-color: var(--border-hover);
+            color: var(--text-primary);
+        }
+        .scope-btn.active {
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.18), rgba(168, 85, 247, 0.15));
+            color: var(--accent-hover);
+            border-color: rgba(6, 182, 212, 0.5);
+            box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.25) inset, 0 4px 12px rgba(6, 182, 212, 0.15);
+        }
+        .scope-count {
+            background: rgba(148, 163, 184, 0.12);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            padding: 1px 8px;
+            font-size: 11px;
+            font-weight: 700;
+            min-width: 26px;
+            text-align: center;
+        }
+        .scope-btn.active .scope-count {
+            background: rgba(6, 182, 212, 0.2);
+            color: var(--accent-hover);
+            border-color: rgba(6, 182, 212, 0.4);
+        }
+        .scope-hint {
+            margin: 8px 0 0;
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: center;
+            line-height: 1.4;
+        }
+
+        /* === WORKER PANEL: select tools + checkbox === */
+        .worker-tools {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 8px 12px;
+            background: rgba(15, 23, 42, 0.7);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            flex-wrap: wrap;
+        }
+        .worker-tools-info {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+        .worker-tools-info strong { color: var(--accent-hover); }
+        .worker-tools-actions {
+            display: flex;
+            gap: 6px;
+        }
+        .btn-mini {
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            padding: 4px 9px;
+            font-size: 11px;
+            font-weight: 600;
+            border-radius: 6px;
+        }
+        .btn-mini:hover:not(:disabled) {
+            background: rgba(30, 41, 59, 0.9);
+            color: var(--text-primary);
+            border-color: var(--border-hover);
+        }
+        .worker-check {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            accent-color: var(--accent);
+            vertical-align: middle;
+        }
+        .workers-panel tr.worker-selected td { background: rgba(6, 182, 212, 0.06); }
+        .workers-panel tr.worker-selected:hover td { background: rgba(6, 182, 212, 0.1); }
+
+        /* === HIT PRESET ACTIONS (Add + Delete buttons row) === */
+        .preset-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            align-items: stretch;
+            flex-wrap: wrap;
+        }
+        .preset-actions .btn-outline-success { flex: 1 1 auto; min-width: 0; }
+        .preset-delete-btn {
+            flex: 0 0 auto;
+            padding: 8px 12px;
+        }
+
+        /* === HIT PRESET ADD FORM === */
+        .add-form, .add-team-form {
+            background: rgba(15, 23, 42, 0.5);
+            padding: 16px;
+            border-radius: var(--radius-md);
+            margin-top: 10px;
+            border: 1px dashed rgba(148, 163, 184, 0.18);
+        }
+        .add-form .field, .add-team-form .field { margin: 10px 0; }
+        .add-form-buttons, .add-team-form-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 12px;
+        }
+
+        .status-line {
+            margin: 8px 0 0;
+            font-size: 12px;
+            font-weight: 500;
+            min-height: 16px;
+        }
+
+        /* === MAIN STATUS (after START/STOP) === */
+        #status {
+            text-align: center;
+            margin-top: 18px;
+            font-weight: 600;
+            font-size: 14px;
+            min-height: 22px;
+            color: var(--warning);
+            word-wrap: break-word;
+        }
+        #status.success { color: var(--success); }
+        #status.error { color: var(--danger); }
+        #status.loading { color: var(--accent); }
+        .last-action {
+            margin-top: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+            text-align: center;
+            min-height: 16px;
+        }
+
+        /* === MODAL === */
+        .modal-bg {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 100;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 30px 14px;
+            overflow-y: auto;
+            animation: fadeIn 0.2s ease;
+        }
+        .modal-bg.show { display: flex; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .modal {
+            background: var(--bg-card);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            width: 100%;
+            max-width: 520px;
+            padding: 24px;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7);
+            animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .modal h3 {
+            margin: 0;
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .modal .modal-subtitle {
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-top: 6px;
+            line-height: 1.5;
+        }
+        .modal h4 {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.7px;
+            color: var(--text-muted);
+            margin: 18px 0 10px 0;
+        }
+
+        /* Lock bar in modal */
+        .lock-bar {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(245, 158, 11, 0.04));
+            border: 1px solid rgba(245, 158, 11, 0.25);
+            border-radius: var(--radius-md);
+            padding: 11px 14px;
+            margin: 14px 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            transition: all var(--transition);
+        }
+        .lock-bar.unlocked {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(16, 185, 129, 0.04));
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+        .lock-status {
+            font-size: 13px;
+            font-weight: 500;
+            flex: 1;
+            min-width: 130px;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+        .lock-bar .lock-status .icon {
+            font-size: 14px;
+        }
+
+        /* Locked overlay effect */
+        .locked-section {
+            opacity: 0.45;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            position: relative;
+        }
+        .locked-section.unlocked { opacity: 1; pointer-events: auto; }
+
+        /* Team list rows */
+        .team-list { margin: 14px 0 4px; display: flex; flex-direction: column; gap: 7px; }
+        .team-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid var(--border);
+            padding: 11px 14px;
+            border-radius: var(--radius-sm);
+            gap: 10px;
+            flex-wrap: wrap;
+            transition: all var(--transition);
+        }
+        .team-row:hover {
+            border-color: var(--border-hover);
+            background: rgba(15, 23, 42, 0.7);
+        }
+        .team-info {
+            flex: 1;
+            min-width: 140px;
+        }
+        .team-info .team-row-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+        .team-info .team-row-meta {
+            display: block;
+            color: var(--text-muted);
+            font-size: 10px;
+            font-family: ui-monospace, monospace;
+            margin-top: 3px;
+            word-break: break-all;
+        }
+        .team-info .count-tag {
+            display: inline-block;
+            background: rgba(6, 182, 212, 0.12);
+            color: var(--accent-hover);
+            border: 1px solid rgba(6, 182, 212, 0.25);
+            padding: 1px 8px;
+            border-radius: 100px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 6px;
+            font-family: inherit;
+        }
+        .badge-default {
+            background: rgba(148, 163, 184, 0.1);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            padding: 4px 10px;
+            font-size: 10px;
+            font-weight: 600;
+            border-radius: 100px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* === Step indicator (Change Password modal) === */
+        .step-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin: 16px 0 18px;
+        }
+        .step-indicator .step {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: rgba(148, 163, 184, 0.1);
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 700;
+            border: 1px solid var(--border);
+            transition: all var(--transition);
+        }
+        .step-indicator .step.active {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 4px var(--accent-glow);
+        }
+        .step-indicator .step.done {
+            background: var(--success);
+            color: white;
+            border-color: var(--success);
+            box-shadow: none;
+        }
+        .step-indicator .step.done::before { content: "✓"; }
+        .step-indicator .step.done { font-size: 0; }
+        .step-indicator .step.done::before { font-size: 14px; }
+        .step-indicator .step-line {
+            width: 28px;
+            height: 1.5px;
+            background: var(--border);
+            border-radius: 2px;
+        }
+        .cp-step h4 {
+            color: var(--text-primary);
+            font-size: 14px;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        /* Change-password trigger button (small, beside workers toggle) */
+        .key-btn {
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            padding: 11px 14px;
+            font-size: 14px;
+            min-width: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .key-btn:hover:not(:disabled) {
+            background: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.3);
+            color: #fbbf24;
+        }
+        .toggle-row {
+            display: flex;
+            gap: 6px;
+            margin-top: 6px;
+        }
+        .toggle-row .workers-toggle { margin-top: 0; flex: 1; }
+
+        /* === MOBILE RESPONSIVE === */
+        @media (max-width: 480px) {
+            body { padding: 16px 8px 40px; font-size: 13px; }
+            .box { padding: 20px 16px; border-radius: 14px; }
+            .brand-icon { width: 34px; height: 34px; font-size: 19px; }
+            .brand-title { font-size: 16px; }
+            .action-grid { grid-template-columns: 1fr; }
+            .btn-start, .btn-collect, .btn-stop-all, .btn-stop-selected { width: 100%; }
+            .add-form-buttons, .add-team-form-buttons { flex-direction: column-reverse; gap: 6px; }
+            .add-form-buttons button, .add-team-form-buttons button { width: 100%; }
+            .modal { padding: 18px 14px; }
+            .team-row { flex-direction: column; align-items: flex-start; }
+        }
+    
+        /* === JS-managed button classes === */
+        .btn-unlock {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            padding: 8px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+            border: none;
+        }
+        .btn-unlock:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.45);
+        }
+        .btn-relock {
+            background: rgba(148, 163, 184, 0.15);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            padding: 8px 14px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .btn-relock:hover:not(:disabled) {
+            background: rgba(148, 163, 184, 0.25);
+            color: var(--text-primary);
+        }
+
+        .btn-mini-default {
+            background: rgba(148, 163, 184, 0.08);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            padding: 5px 10px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            cursor: not-allowed;
+        }
+        .btn-mini-remove {
+            background: rgba(244, 63, 94, 0.1);
+            color: #fda4af;
+            border: 1px solid rgba(244, 63, 94, 0.28);
+            padding: 5px 11px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .btn-mini-remove:hover:not(:disabled) {
+            background: rgba(244, 63, 94, 0.2);
+            border-color: rgba(244, 63, 94, 0.5);
+            color: #fecdd3;
+        }
+
+        /* Team-info text styling for JS-rendered content */
+        .team-info b {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+        .team-info small {
+            display: block;
+            color: var(--text-muted);
+            font-size: 10px;
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, monospace;
+            margin-top: 4px;
+            word-break: break-all;
+            letter-spacing: 0.3px;
+        }
+        .team-info {
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+
+        /* Hide ip-pill when no IP (for code class in panel) */
+        .workers-panel p {
+            padding: 16px;
+            color: var(--text-muted);
+            text-align: center;
+            font-size: 13px;
+        }
+
+        /* ============== SCHEDULE CARD ============== */
+        .schedule-card {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 14px 16px;
+            margin-top: 16px;
+        }
+        .schedule-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 4px;
+        }
+        .schedule-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+        .schedule-clock {
+            font-family: ui-monospace, "SF Mono", Menlo, monospace;
+            font-size: 12px;
+            color: var(--accent);
+            background: rgba(6, 182, 212, 0.08);
+            padding: 3px 8px;
+            border-radius: 6px;
+            border: 1px solid rgba(6, 182, 212, 0.2);
+        }
+        .schedule-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .schedule-toggle input { cursor: pointer; }
+        .schedule-toggle.master {
+            font-weight: 700;
+            color: var(--accent-hover);
+        }
+        .schedule-hint {
+            color: var(--text-muted);
+            font-size: 11px;
+            margin: 6px 0 10px;
+            line-height: 1.55;
+        }
+        .schedule-fixed-hit {
+            background: rgba(6, 182, 212, 0.06);
+            border: 1px solid rgba(6, 182, 212, 0.25);
+            border-radius: var(--radius-sm);
+            padding: 10px 12px;
+            margin: 10px 0;
+        }
+        .fixed-hit-row { display: flex; align-items: center; gap: 10px; }
+        .fixed-hit-icon { font-size: 18px; }
+        .fixed-hit-body { flex: 1; min-width: 0; }
+        .fixed-hit-name { font-weight: 700; color: var(--text-primary); font-size: 13px; }
+        .fixed-hit-gid {
+            display: block;
+            font-family: ui-monospace, "SF Mono", Menlo, monospace;
+            font-size: 10.5px;
+            color: var(--accent);
+            background: rgba(15, 23, 42, 0.5);
+            padding: 3px 6px;
+            border-radius: 5px;
+            margin-top: 4px;
+            word-break: break-all;
+        }
+        .fixed-hit-note {
+            color: var(--text-secondary);
+            font-size: 11px;
+            margin: 8px 0 0;
+            line-height: 1.55;
+        }
+        .fixed-hit-note b { color: var(--warning); }
+        .schedule-windows {
+            display: grid;
+            gap: 6px;
+        }
+        .schedule-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            align-items: center;
+            padding: 8px 10px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            transition: all var(--transition);
+        }
+        .schedule-row.active {
+            border-color: var(--success);
+            box-shadow: 0 0 0 1px var(--success-glow);
+            background: rgba(16, 185, 129, 0.06);
+        }
+        .schedule-row.disabled { opacity: 0.5; }
+        .schedule-row .win-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+        .schedule-row input[type="text"] {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            padding: 6px 9px;
+            font-size: 12px;
+            font-family: ui-monospace, "SF Mono", Menlo, monospace;
+            width: 100%;
+            min-width: 0;
+        }
+        .schedule-row input[type="text"]::placeholder { color: var(--text-muted); font-size: 11px; }
+        .schedule-row .win-status {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 3px 7px;
+            border-radius: 5px;
+            white-space: nowrap;
+            color: var(--text-muted);
+            background: rgba(148, 163, 184, 0.1);
+            min-width: 50px;
+            text-align: center;
+        }
+        .schedule-row.active .win-status {
+            color: var(--success);
+            background: rgba(16, 185, 129, 0.15);
+        }
+        .schedule-log {
+            margin-top: 10px;
+            max-height: 90px;
+            overflow-y: auto;
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 9px;
+            font-family: ui-monospace, "SF Mono", Menlo, monospace;
+            font-size: 10.5px;
+            color: var(--text-secondary);
+            line-height: 1.55;
+        }
+        .schedule-log .log-line { white-space: pre-wrap; }
+        .schedule-log .log-line.ok { color: var(--success); }
+        .schedule-log .log-line.warn { color: var(--warning); }
+        .schedule-log .log-line.err { color: var(--danger); }
+        @media (max-width: 560px) {
+            .schedule-row { grid-template-columns: 1fr; }
+            .schedule-row .win-status { justify-self: start; }
+        }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <!-- HEADER -->
+        <div class="header">
+            <div class="brand">
+                <div class="brand-icon">🐼</div>
+                <div class="brand-text">
+                    <div class="brand-title">Panda Commander</div>
+                    <div class="brand-subtitle">TEAM CONTROL CENTER</div>
+                </div>
+            </div>
+            <div class="hero-badge">
+                <span class="live-dot"></span>
+                <span class="team-text" id="teamBadge">Loading...</span>
+                <span class="count-pill" id="totalBadge">⏳</span>
+            </div>
+        </div>
+
+        <!-- SYNC BAR -->
+        <div class="sync-bar">
+            <div class="sync-info">
+                <span class="sync-icon">📊</span>
+                <span class="sync-text" id="syncInfo">Loading...</span>
+            </div>
+            <div class="sync-actions">
+                <button type="button" class="btn-outline-accent" id="btnRefresh" onclick="refreshTeamsData()">
+                    <span>🔄</span> Refresh
+                </button>
+                <button type="button" class="btn-outline-purple" onclick="openManageModal()">
+                    <span>⚙️</span> Manage
+                </button>
+            </div>
+        </div>
+
+        <!-- STATUS BANNERS -->
+        <div class="banner banner-loading" id="globalLoading">
+            <span class="spinner"></span>
+            <span>Google Sheet থেকে data load হচ্ছে...</span>
+        </div>
+        <div class="banner banner-error" id="globalError"></div>
+
+        <!-- HIDDEN: DB URL -->
+        <input type="hidden" id="dbUrl" value="http://38.58.179.188:3000">
+
+        <!-- TEAM SELECT -->
+        <div class="field">
+            <label class="field-label" for="teamName">
+                👥 কোন পক্ষ কন্ট্রোল করবে?
+            </label>
+            <select id="teamName" onchange="onTeamChange()">
+                <option value="">-- Loading teams --</option>
+            </select>
+        </div>
+
+        <!-- WORKERS TOGGLE + CHANGE PASSWORD -->
+        <div class="toggle-row">
+            <button type="button" class="workers-toggle" id="workersToggleBtn" onclick="toggleWorkers()">
+                <span id="workerToggleText">👥 Workers দেখুন</span>
+                <span class="arrow" id="workerToggleArrow">▼</span>
+            </button>
+            <button type="button" class="key-btn" onclick="openChangePasswordModal()" title="Selected team এর password change করুন">🔑</button>
+        </div>
+        <div id="workersPanel" class="workers-panel" style="display:none;"></div>
+
+        <!-- HIT PRESET -->
+        <div class="field">
+            <label class="field-label" for="presetHits">
+                🎯 প্রিসেট HIT সিলেক্ট করুন
+            </label>
+            <select id="presetHits" onchange="updateHitInput()">
+                <option value="">-- নিজে কাস্টম HIT ID বসাবো (নিচে পেস্ট করুন) --</option>
+                <option value="3HDDSJH816INDBSTV3MKXL5V2CWPWV">Data Science Group, The New York Times ($0.04)</option>
+                <option value="34YKDDZP3U05K0JJWXP8FS8VTT3WHF">Affable ($0.03)</option>
+                <option value="3WY138MAAD6950P3HGPH01UQ4EHYI8">Affable ($0.05)</option>
+                <option value="3Q9ARQ9ZAP3C1HXSQAA4KLUDU4D3MR">Javan Martin ($0.05)</option>
+                <option value="3R3SP2PPZLI4NH0BU7XSS6WFCXC8P9">Javan Martin ($0.11)</option>
+            </select>
+
+            <div class="preset-actions">
+                <button type="button" class="btn-outline-success" onclick="toggleAddForm()">
+                    ➕ নতুন প্রিসেট যোগ করুন
+                </button>
+                <button type="button" class="btn-outline-danger preset-delete-btn" id="btnDeletePreset" onclick="deleteSelectedPreset()" disabled title="সিলেক্ট করা কাস্টম প্রিসেট ডিলিট করুন">
+                    🗑️ প্রিসেট ডিলিট
+                </button>
+            </div>
+        </div>
+
+        <!-- ADD HIT PRESET FORM -->
+        <div id="addForm" class="add-form" style="display:none;">
+            <div class="field">
+                <label class="field-label" for="newReqId">Requester ID (HIT Group ID)</label>
+                <input type="text" id="newReqId" placeholder="HIT Group ID..." oninput="checkAddBtn()" autocomplete="off">
+            </div>
+            <div class="field">
+                <label class="field-label" for="newReqName">Requester Name</label>
+                <input type="text" id="newReqName" placeholder="যেমন: Affable" oninput="checkAddBtn()" autocomplete="off">
+            </div>
+            <div class="field">
+                <label class="field-label" for="newReqPrice">Price ($)</label>
+                <input type="text" id="newReqPrice" placeholder="যেমন: 0.05" oninput="checkAddBtn()" autocomplete="off" inputmode="decimal">
+            </div>
+            <p id="addStatus" class="status-line"></p>
+            <div class="add-form-buttons">
+                <button type="button" class="btn-ghost" onclick="cancelAddForm()">✕ বাতিল</button>
+                <button type="button" class="btn-outline-success" id="btnAdd" onclick="addNewPreset()" disabled>✓ যোগ করুন</button>
+            </div>
+        </div>
+
+        <!-- HIT GROUP ID INPUT -->
+        <div class="field">
+            <label class="field-label" for="hitId">
+                🔑 HIT Group ID
+                <span class="lock-icon-mini" id="lockIcon" style="display:none;">🔒 (preset selected — locked)</span>
+            </label>
+            <input type="text" id="hitId" placeholder="HIT ID পেস্ট করুন..." autocomplete="off">
+        </div>
+
+        <!-- ACTION BUTTONS -->
+        <div class="action-grid">
+            <button class="btn-start" id="btnStart" onclick="sendCommand('start')">
+                ▶ START HIT
+                <span class="btn-sub">Collect + GoHam</span>
+            </button>
+            <button class="btn-collect" id="btnCollect" onclick="sendCommand('collect')">
+                📦 COLLECT ONLY
+                <span class="btn-sub">শুধু Collect</span>
+            </button>
+        </div>
+        <div class="action-grid stop-grid">
+            <button class="btn-stop-all" id="btnStop" onclick="sendCommand('stop_all')">
+                ⏸ STOP ALL HITS
+                <span class="btn-sub">সব running HIT বন্ধ</span>
+            </button>
+            <button class="btn-stop-selected" id="btnStopSelected" onclick="sendCommand('stop')">
+                🎯 STOP SELECTED
+                <span class="btn-sub">শুধু এই HIT বন্ধ</span>
+            </button>
+        </div>
+
+        <!-- WORKER SCOPE SELECTOR -->
+        <div class="scope-box">
+            <div class="scope-label">⚙️ কোন worker দের পাঠাবো?</div>
+            <div class="scope-row">
+                <button type="button" class="scope-btn" id="btnScopeSelected" onclick="setWorkerScope('selected')" title="শুধু checkbox-এ tick দেয়া worker দের পাঠাবে">
+                    <span class="scope-text">🎯 Select Worked</span>
+                    <span class="scope-count" id="scopeSelectedCount">0</span>
+                </button>
+                <button type="button" class="scope-btn active" id="btnScopeAll" onclick="setWorkerScope('all')" title="Team এর সব worker কে পাঠাবে">
+                    <span class="scope-text">👥 My Team All</span>
+                    <span class="scope-count" id="scopeAllCount">0</span>
+                </button>
+            </div>
+            <p class="scope-hint" id="scopeHint">সব worker target — Workers panel খুলে নির্দিষ্ট worker tick করে "Select Worked" mode-এ যাও।</p>
+        </div>
+
+        <!-- BST SCHEDULED AUTO-RUN -->
+        <div class="schedule-card">
+            <div class="schedule-head">
+                <div class="schedule-title">
+                    🕐 Scheduled Auto-Run (BST)
+                    <span class="schedule-clock" id="scheduleClock">--:--:--</span>
+                </div>
+                <label class="schedule-toggle master" title="পুরো scheduler চালু/বন্ধ">
+                    <input type="checkbox" id="scheduleMaster" onchange="onScheduleMasterChange()">
+                    <span id="scheduleMasterLabel">OFF</span>
+                </label>
+            </div>
+
+            <div class="schedule-fixed-hit">
+                <div class="fixed-hit-row">
+                    <span class="fixed-hit-icon">📌</span>
+                    <div class="fixed-hit-body">
+                        <div class="fixed-hit-name">Data Science Group, The New York Times</div>
+                        <code class="fixed-hit-gid">3HDDSJH816INDBSTV3MKXL5V2CWPWV</code>
+                    </div>
+                </div>
+                <p class="fixed-hit-note">
+                    নিচের ৫টা BST window-এ এই HIT auto-start হবে।
+                    Window শেষ হলে: <b>STOP ALL HITS → 5s wait → আগের HIT START</b>।
+                </p>
+            </div>
+
+            <div class="schedule-windows" id="scheduleWindows"></div>
+            <div class="schedule-log" id="scheduleLog">⏳ Scheduler idle.</div>
+        </div>
+
+        <p id="status"></p>
+        <p class="last-action" id="lastAction"></p>
+    </div>
+
+    <!-- MANAGE MODAL -->
+    <div class="modal-bg" id="manageModal">
+        <div class="modal">
+            <h3>⚙️ Teams পরিচালনা</h3>
+            <p class="modal-subtitle">
+                নতুন team add করতে: Google Sheet এ tab টা open করো → URL এর <code style="font-size:11px;background:rgba(6,182,212,0.1);padding:1px 5px;border-radius:3px;color:var(--accent);">gid=...</code> নাম্বারটা copy করো।
+            </p>
+
+            <!-- Password lock bar -->
+            <div class="lock-bar" id="lockBar">
+                <div class="lock-status" id="lockStatus">
+                    <span class="icon">🔒</span> Edit করতে password দিতে হবে
+                </div>
+                <button type="button" class="btn-outline-warn" id="btnUnlock" onclick="promptUnlock()">🔓 Unlock</button>
+            </div>
+
+            <h4>📋 Team List</h4>
+            <div class="team-list" id="teamList"></div>
+
+            <div class="locked-section" id="lockedSection">
+                <h4>➕ নতুন Team যোগ করুন</h4>
+                <div class="add-team-form">
+                    <div class="field">
+                        <label class="field-label" for="newTeamName">Team Name (যেমন: Karim)</label>
+                        <input type="text" id="newTeamName" placeholder="Team এর নাম" oninput="checkTeamAddBtn()" autocomplete="off">
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="newTeamGid">Sheet Tab GID (নাম্বার)</label>
+                        <input type="text" id="newTeamGid" placeholder="যেমন: 1411190979" oninput="checkTeamAddBtn()" autocomplete="off" inputmode="numeric">
+                    </div>
+                    <p id="teamAddStatus" class="status-line"></p>
+                    <div class="add-team-form-buttons">
+                        <button type="button" class="btn-ghost" onclick="closeManageModal()">✕ বন্ধ</button>
+                        <button type="button" class="btn-outline-success" id="btnTeamAdd" onclick="addNewTeam()" disabled>✓ যোগ করুন</button>
+                    </div>
+                </div>
+
+                <h4>🔧 Advanced: Sheet ID</h4>
+                <div class="add-team-form">
+                    <div class="field">
+                        <label class="field-label" for="sheetIdInput">Google Sheet ID</label>
+                        <p style="color:var(--text-muted);font-size:11px;margin:-4px 0 7px 0;line-height:1.5;">
+                            Sheet URL এর <code style="font-size:10px;background:rgba(148,163,184,0.1);padding:1px 4px;border-radius:3px;">/d/</code> আর <code style="font-size:10px;background:rgba(148,163,184,0.1);padding:1px 4px;border-radius:3px;">/edit</code> এর মাঝের অংশ।
+                        </p>
+
+                        <!-- Sheet ID hidden by default — needs password to reveal -->
+                        <div id="sheetIdHiddenView">
+                            <div style="background: var(--bg-input); border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 14px; text-align: center;">
+                                <div style="font-size: 22px; margin-bottom: 6px;">🔒</div>
+                                <p style="color: var(--text-secondary); font-size: 12px; margin-bottom: 10px;">
+                                    Sheet ID সুরক্ষিত আছে। দেখতে password দরকার।
+                                </p>
+                                <button type="button" class="btn-outline-warn" onclick="revealSheetId()">👁 Show Sheet ID</button>
+                            </div>
+                        </div>
+
+                        <div id="sheetIdRevealedView" style="display:none;">
+                            <input type="text" id="sheetIdInput" placeholder="Sheet ID" autocomplete="off">
+                            <button type="button" class="btn-ghost" onclick="hideSheetId()" style="margin-top:6px; font-size:11px; padding:5px 10px;">🙈 Hide Sheet ID</button>
+                        </div>
+                    </div>
+                    <p id="sheetIdStatus" class="status-line"></p>
+                    <div class="add-team-form-buttons" id="sheetIdButtons" style="display:none;">
+                        <button type="button" class="btn-ghost" onclick="resetSheetId()">↺ Reset</button>
+                        <button type="button" class="btn-outline-success" onclick="saveSheetId()">💾 Save & Refresh</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CHANGE PASSWORD MODAL -->
+    <div class="modal-bg" id="changePasswordModal">
+        <div class="modal">
+            <h3>🔑 Password পরিবর্তন</h3>
+            <p class="modal-subtitle" id="cpSubtitle">Team এর password change করতে current password verify করতে হবে।</p>
+
+            <div class="step-indicator">
+                <span class="step active" id="stepInd1">1</span>
+                <span class="step-line"></span>
+                <span class="step" id="stepInd2">2</span>
+                <span class="step-line"></span>
+                <span class="step" id="stepInd3">3</span>
+            </div>
+
+            <div id="cpStep1" class="cp-step">
+                <h4>Step 1: Current Password</h4>
+                <p style="color:var(--text-secondary); font-size:13px; margin: 6px 0 10px;">
+                    Team: <b id="cpTeamName" style="color:var(--accent-hover);"></b>
+                </p>
+                <div class="field">
+                    <label class="field-label" for="cpCurrentPassword">বর্তমান Password</label>
+                    <input type="password" id="cpCurrentPassword" placeholder="Current password" autocomplete="off">
+                </div>
+                <p id="cpStep1Status" class="status-line"></p>
+                <div class="add-team-form-buttons">
+                    <button type="button" class="btn-ghost" onclick="closeChangePasswordModal()">✕ বাতিল</button>
+                    <button type="button" class="btn-outline-success" onclick="cpVerifyCurrent()">Verify ➜</button>
+                </div>
+            </div>
+
+            <div id="cpStep2" class="cp-step" style="display:none;">
+                <h4>Step 2: OTP Verify</h4>
+                <p style="color:var(--text-secondary); font-size:13px; margin: 6px 0 10px;">
+                    OTP পাঠানো হয়েছে: <b id="cpEmailMasked" style="color:var(--accent-hover); font-family: ui-monospace, monospace;"></b>
+                </p>
+                <div class="field">
+                    <label class="field-label" for="cpOtpInput">6-digit OTP</label>
+                    <input type="text" id="cpOtpInput" placeholder="123456" inputmode="numeric" maxlength="6" autocomplete="one-time-code" style="font-family: ui-monospace, monospace; letter-spacing: 4px; text-align: center; font-size: 18px;">
+                </div>
+                <p id="cpStep2Status" class="status-line"></p>
+                <div class="add-team-form-buttons">
+                    <button type="button" class="btn-ghost" onclick="cpResendOtp()">↻ Resend OTP</button>
+                    <button type="button" class="btn-outline-success" onclick="cpVerifyOtp()">Verify ➜</button>
+                </div>
+            </div>
+
+            <div id="cpStep3" class="cp-step" style="display:none;">
+                <h4>Step 3: নতুন Password</h4>
+                <div class="field">
+                    <label class="field-label" for="cpNewPassword">নতুন Password (min 6 chars)</label>
+                    <input type="password" id="cpNewPassword" placeholder="New password" oninput="checkCpStep3()" autocomplete="new-password">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="cpConfirmPassword">আবার Type করো</label>
+                    <input type="password" id="cpConfirmPassword" placeholder="Confirm new password" oninput="checkCpStep3()" autocomplete="new-password">
+                </div>
+                <p id="cpStep3Status" class="status-line"></p>
+                <div class="add-team-form-buttons">
+                    <button type="button" class="btn-ghost" onclick="closeChangePasswordModal()">✕ বাতিল</button>
+                    <button type="button" class="btn-outline-success" id="cpSaveBtn" onclick="cpSavePassword()" disabled>💾 Save Password</button>
+                </div>
+            </div>
+
+            <div id="cpStep4" class="cp-step" style="display:none;">
+                <div style="text-align:center; padding: 20px 0;">
+                    <div style="font-size: 44px; margin-bottom: 10px;">✅</div>
+                    <h4 style="text-transform:none; letter-spacing:0; font-size:16px; color:var(--text-primary);">Password পরিবর্তন সফল!</h4>
+                    <p style="color: var(--text-muted); font-size: 12px; margin-top: 8px; line-height:1.5;">
+                        এখন থেকে এই team এ access করতে নতুন password ব্যবহার করো।<br>
+                        পুরনো session unlocks reset হয়ে গেছে।
+                    </p>
+                </div>
+                <div class="add-team-form-buttons">
+                    <button type="button" class="btn-outline-success" onclick="closeChangePasswordModal()" style="width:100%;">✓ Done</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // CONFIG
+        // ============================================================
+        const SHEET_ID = "1rxBov-hTqPijLNiPVMFdUZIBAifS0ixjldkpwmC1uZY";
+        const ADMIN_PASSWORD = "KanasITpoint";  // Modal lock + Sheet ID reveal
+
+        // Per-team passwords — each team manager only knows their own.
+        // Custom teams added via UI have no password (unrestricted).
+        const TEAM_PASSWORDS = {
+            "Noushad": "KanasITpoint",
+            "Mehedi":  "Asdf1234",
+            "Sagor":   "Sagor@2020",
+            "Hasib":   "FF123?",
+            "Nazmul":  "Nazmul7040",
+            "Office":  "maruf1234mm"
+        };
+
+        // ============================================================
+        // EMAILJS CONFIG (for password-change OTP emails)
+        // ============================================================
+        // To enable real OTP emails:
+        //   1. Sign up at https://emailjs.com (free tier = 200 emails/month)
+        //   2. Add an Email Service (Gmail / Outlook / etc.)
+        //   3. Create a Template using these vars: {{to_email}} {{team_name}} {{otp}}
+        //   4. Copy Service ID, Template ID, Public Key here
+        // If left empty, OTP shows in browser alert (demo mode — works for testing).
+        const EMAILJS_CONFIG = {
+            serviceId:  "service_z7svcua",        // EmailJS Service ID
+            templateId: "template_3jd0op8",       // EmailJS Template ID
+            publicKey:  "w9BBPUdnj6LTo4MlR"   // EmailJS Public Key
+        };
+
+        // Each team's email address for receiving OTPs. Update with real emails.
+        const TEAM_EMAILS = {
+            "Noushad": "nkorim321@gmail.com",
+            "Mehedi":  "mehedi.cse.bubt@gmail.com",
+            "Sagor":   "shakibmahamud77@gmail.com",
+            "Hasib":   "mdhasibhossan@gmail.com",
+            "Nazmul":  "nkarim.kst@gmail.com",
+            "Office":  "mdshakilislam980ss@gmail.com"
+        };
+
+        // Default teams (built into the app). User can add more via UI.
+        const DEFAULT_TEAMS = [
+            { name: "Noushad", gid: "2023535813" },
+            { name: "Mehedi",  gid: "1411190979" },
+            { name: "Sagor",   gid: "895270525"  },
+            { name: "Hasib",   gid: "1686426219" },
+            { name: "Nazmul",  gid: "151440666"  },
+            { name: "Office",  gid: "479532748"  }
+        ];
+
+        const STORAGE_KEYS = {
+            customPresets:   'panda_custom_presets',
+            customTeams:     'panda_custom_teams',     // user-added teams
+            cachedTeamsData: 'panda_cached_teams_data',
+            lastSyncTime:    'panda_last_sync_time',
+            customSheetId:   'panda_custom_sheet_id',  // optional override for sheet id
+            unlockedTeams:   'panda_unlocked_teams',   // remember unlocks across reload
+            teamPasswords:   'panda_team_passwords',   // overrides for changed passwords
+            selectedWorkers: 'panda_selected_workers', // { teamName: [workerId, ...] }
+            workerScope:     'panda_worker_scope',     // { teamName: 'all' | 'selected' }
+            // Form state — restored on page reload
+            lastTeam:        'panda_last_team',        // last selected team (string)
+            lastHitId:       'panda_last_hit_id',      // last typed HIT Group ID (string)
+            lastPreset:      'panda_last_preset',      // last selected preset value (string)
+            // BST scheduled auto-run
+            scheduleConfig:  'panda_schedule_config',  // { masterEnabled, windows: { id: { groupId, enabled } } }
+            scheduleState:   'panda_schedule_state',   // { id: 'running' | 'idle' } — transition tracking
+            scheduleSnapshots: 'panda_schedule_snapshots' // { id: 'previousHitId' } — restore target
+        };
+
+        function getSheetId() {
+            return lsGet(STORAGE_KEYS.customSheetId, null) || SHEET_ID;
+        }
+
+        // ============================================================
+        // STATE
+        // ============================================================
+        let TEAMS_DATA = {};         // { teamName: [{ip, username, workerId}, ...] }
+        let TEAM_CONFIG = [];        // [{name, gid, isCustom}]
+        let workersPanelOpen = false;
+        let isUnlocked = false;      // Modal lock: per-session unlock for Manage actions
+        let unlockedTeams = new Set();  // Teams unlocked in this session for view + control
+        let lastValidTeam = "";      // Track last successfully selected team (for revert)
+        let sheetIdRevealed = false; // Sheet ID currently visible in modal?
+
+        // ============================================================
+        // STORAGE HELPERS
+        // ============================================================
+        function lsGet(key, fallback) {
+            try {
+                const raw = localStorage.getItem(key);
+                return raw ? JSON.parse(raw) : fallback;
+            } catch (e) { return fallback; }
+        }
+        function lsSet(key, val) {
+            try { localStorage.setItem(key, JSON.stringify(val)); }
+            catch (e) { console.error("localStorage save failed:", e); }
+        }
+
+        // ============================================================
+        // WORKER SCOPE — per-team subset + scope mode (all | selected)
+        // ============================================================
+        function getSelectedWorkers(team) {
+            const map = lsGet(STORAGE_KEYS.selectedWorkers, {});
+            return new Set(map[team] || []);
+        }
+        function saveSelectedWorkers(team, workerIdSet) {
+            const map = lsGet(STORAGE_KEYS.selectedWorkers, {});
+            map[team] = Array.from(workerIdSet);
+            lsSet(STORAGE_KEYS.selectedWorkers, map);
+        }
+        function getWorkerScope(team) {
+            const map = lsGet(STORAGE_KEYS.workerScope, {});
+            return map[team] === 'selected' ? 'selected' : 'all';   // default: all
+        }
+        function saveWorkerScope(team, scope) {
+            const map = lsGet(STORAGE_KEYS.workerScope, {});
+            map[team] = (scope === 'selected') ? 'selected' : 'all';
+            lsSet(STORAGE_KEYS.workerScope, map);
+        }
+        // Filter team workers down to the active scope's set
+        function getTargetedWorkers(team) {
+            const all = TEAMS_DATA[team] || [];
+            if (getWorkerScope(team) !== 'selected') return all;
+            const sel = getSelectedWorkers(team);
+            return all.filter(w => sel.has(w.workerId));
+        }
+        // Toggle one worker's checkbox (called from inline onchange)
+        function toggleWorkerSelection(workerId, checked) {
+            const team = document.getElementById("teamName").value;
+            if (!team) return;
+            const sel = getSelectedWorkers(team);
+            if (checked) sel.add(workerId); else sel.delete(workerId);
+            saveSelectedWorkers(team, sel);
+            const row = document.querySelector(`tr[data-row-worker="${cssEscape(workerId)}"]`);
+            if (row) row.classList.toggle("worker-selected", checked);
+            updateScopeUI();
+        }
+        function selectAllWorkers() {
+            const team = document.getElementById("teamName").value;
+            if (!team) return;
+            const workers = TEAMS_DATA[team] || [];
+            saveSelectedWorkers(team, new Set(workers.map(w => w.workerId)));
+            renderWorkersPanel();
+            updateScopeUI();
+        }
+        function clearWorkerSelection() {
+            const team = document.getElementById("teamName").value;
+            if (!team) return;
+            saveSelectedWorkers(team, new Set());
+            renderWorkersPanel();
+            updateScopeUI();
+        }
+        // Switch scope mode (from the 2 big buttons)
+        function setWorkerScope(scope) {
+            const team = document.getElementById("teamName").value;
+            if (!team) {
+                setStatus("⚠️ আগে একটা team সিলেক্ট করো!", "error");
+                return;
+            }
+            saveWorkerScope(team, scope);
+            updateScopeUI();
+        }
+        // Refresh scope buttons (active state + counts + hint)
+        function updateScopeUI() {
+            const team = document.getElementById("teamName").value;
+            const btnSel  = document.getElementById("btnScopeSelected");
+            const btnAll  = document.getElementById("btnScopeAll");
+            const cntSel  = document.getElementById("scopeSelectedCount");
+            const cntAll  = document.getElementById("scopeAllCount");
+            const hint    = document.getElementById("scopeHint");
+            if (!btnSel || !btnAll) return;
+
+            const allWorkers = team ? (TEAMS_DATA[team] || []) : [];
+            const sel        = team ? getSelectedWorkers(team) : new Set();
+            // Only count workers that still exist in current team data
+            const liveSel    = allWorkers.filter(w => sel.has(w.workerId)).length;
+            const scope      = team ? getWorkerScope(team) : 'all';
+
+            cntSel.innerText = liveSel;
+            cntAll.innerText = allWorkers.length;
+            btnSel.classList.toggle("active", scope === 'selected');
+            btnAll.classList.toggle("active", scope === 'all');
+
+            if (!team) {
+                hint.innerText = "প্রথমে team সিলেক্ট করো।";
+            } else if (scope === 'selected') {
+                hint.innerHTML = liveSel === 0
+                    ? `⚠️ <strong style="color:var(--warning)">কোনো worker সিলেক্ট করা নেই!</strong> Workers panel খুলে tick দাও।`
+                    : `✅ শুধু এই <strong>${liveSel}</strong> জন worker-এ command যাবে (বাকি ${allWorkers.length - liveSel} জন idle থাকবে)।`;
+            } else {
+                hint.innerText = `সব ${allWorkers.length} জন worker-এ command যাবে।`;
+            }
+        }
+        // CSS-safe escaper for attribute selectors
+        function cssEscape(s) {
+            return String(s).replace(/[^a-zA-Z0-9_-]/g, ch => '\\' + ch);
+        }
+
+        // ============================================================
+        // CSV PARSER (kept for reference — no longer used since JSONP path is primary)
+        // ============================================================
+        function parseCsvLine(line) {
+            const result = [];
+            let cur = '';
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                const c = line[i];
+                if (c === '"') {
+                    if (inQuotes && line[i+1] === '"') { cur += '"'; i++; }
+                    else { inQuotes = !inQuotes; }
+                } else if (c === ',' && !inQuotes) {
+                    result.push(cur); cur = '';
+                } else {
+                    cur += c;
+                }
+            }
+            result.push(cur);
+            return result;
+        }
+
+        // ============================================================
+        // FETCH SHEET DATA — via JSONP (script tag) to bypass CORS
+        //
+        // WHY JSONP, NOT fetch():
+        // When this HTML file is opened directly from disk (file:// URL),
+        // browsers block fetch() to external HTTPS due to CORS. JSONP loads
+        // data via <script> tag, which is exempt from CORS — works from
+        // file:// AND from any web host.
+        // ============================================================
+        function fetchTabAsRows(gid) {
+            return new Promise((resolve, reject) => {
+                const callbackName = '__gvizCb_' + Date.now() + '_' + Math.floor(Math.random() * 1e9);
+                let settled = false;
+                let scriptEl = null;
+
+                const timeoutId = setTimeout(() => {
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
+                    reject(new Error("Timeout — Sheet response পাইনি ১৫ সেকেন্ডে"));
+                }, 15000);
+
+                function cleanup() {
+                    try { delete window[callbackName]; } catch(_) { window[callbackName] = undefined; }
+                    if (scriptEl && scriptEl.parentNode) {
+                        scriptEl.parentNode.removeChild(scriptEl);
+                    }
+                    clearTimeout(timeoutId);
+                }
+
+                // Google calls this with the parsed response object
+                window[callbackName] = function(response) {
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
+                    try {
+                        if (!response) {
+                            reject(new Error("Sheet response খালি"));
+                            return;
+                        }
+                        if (response.status === 'error') {
+                            const errs = response.errors || [];
+                            const msg = errs[0]
+                                ? (errs[0].detailed_message || errs[0].message || 'Unknown error')
+                                : 'Sheet error — public না বা wrong GID';
+                            reject(new Error(msg));
+                            return;
+                        }
+                        if (!response.table) {
+                            reject(new Error("Sheet response এ table নেই"));
+                            return;
+                        }
+                        const rows = response.table.rows || [];
+                        const data = [];
+                        const seen = new Set();  // Dedup: same (ip + username + workerId) row
+                        for (const row of rows) {
+                            if (!row || !row.c) continue;
+                            // Each cell is { v: value, f: formatted } or null for empty
+                            const cells = row.c.map(c => (c && c.v != null) ? String(c.v) : '');
+                            const ip       = (cells[0] || '').trim();
+                            const username = (cells[1] || '').trim();
+                            const workerId = (cells[2] || '').trim();
+                            if (!workerId) continue;
+                            // Skip exact duplicate rows (same IP + Username + Worker ID)
+                            const key = ip + '|' + username + '|' + workerId;
+                            if (seen.has(key)) continue;
+                            seen.add(key);
+                            data.push({ ip, username, workerId });
+                        }
+                        resolve(data);
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+
+                // Build URL with headers=1 (treat first row as header) and our callback
+                const url = `https://docs.google.com/spreadsheets/d/${getSheetId()}` +
+                            `/gviz/tq?gid=${encodeURIComponent(gid)}` +
+                            `&headers=1` +
+                            `&tqx=responseHandler:${callbackName}` +
+                            `&_=${Date.now()}`;  // cache buster
+
+                scriptEl = document.createElement('script');
+                scriptEl.src = url;
+                scriptEl.async = true;
+                scriptEl.onerror = function() {
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
+                    reject(new Error("Sheet load fail — 'Anyone with link can view' আছে কিনা চেক করো"));
+                };
+                document.head.appendChild(scriptEl);
+            });
+        }
+
+        function getAllTeamConfig() {
+            const customs = lsGet(STORAGE_KEYS.customTeams, []);
+            const defaults = DEFAULT_TEAMS.map(t => ({ ...t, isCustom: false }));
+            const customsClean = customs.map(t => ({ ...t, isCustom: true }));
+            return [...defaults, ...customsClean];
+        }
+
+        async function refreshTeamsData() {
+            const loadingEl = document.getElementById('globalLoading');
+            const errorEl   = document.getElementById('globalError');
+            const refreshBtn = document.getElementById('btnRefresh');
+
+            errorEl.classList.remove('show');
+            loadingEl.classList.add('show');
+            refreshBtn.disabled = true;
+
+            TEAM_CONFIG = getAllTeamConfig();
+
+            const newData = {};
+            const failures = [];
+
+            // Try to load each team in parallel
+            const promises = TEAM_CONFIG.map(async (team) => {
+                try {
+                    newData[team.name] = await fetchTabAsRows(team.gid);
+                } catch (err) {
+                    failures.push({ team: team.name, err: err.message });
+                    newData[team.name] = [];
+                }
+            });
+            await Promise.all(promises);
+
+            loadingEl.classList.remove('show');
+            refreshBtn.disabled = false;
+
+            if (failures.length === TEAM_CONFIG.length) {
+                // All failed — fall back to cached data if available
+                const cached = lsGet(STORAGE_KEYS.cachedTeamsData, null);
+                if (cached) {
+                    TEAMS_DATA = cached;
+                    showError(`⚠️ Sheet থেকে fetch fail হয়েছে। Cached data ব্যবহার হচ্ছে। (Sheet "Anyone with link can view" করা আছে কিনা চেক করো)`);
+                } else {
+                    TEAMS_DATA = {};
+                    showError(`❌ Sheet থেকে data load করা যায়নি। দয়া করে check করো:<br>1. Sheet টা "Anyone with the link can view" এ shared আছে?<br>2. Internet connection ঠিক আছে?<br>Error: ${failures[0].err}`);
+                }
+            } else {
+                TEAMS_DATA = newData;
+                lsSet(STORAGE_KEYS.cachedTeamsData, TEAMS_DATA);
+                lsSet(STORAGE_KEYS.lastSyncTime, Date.now());
+
+                if (failures.length > 0) {
+                    showError(`⚠️ কিছু team load হয়নি: ${failures.map(f => f.team).join(', ')}`);
+                }
+            }
+
+            // Update UI
+            populateTeamDropdown();
+            updateSyncInfo();
+            renderWorkersPanel();
+            updateTeamBadge();
+        }
+
+        function showError(msg) {
+            const errorEl = document.getElementById('globalError');
+            errorEl.innerHTML = msg;
+            errorEl.classList.add('show');
+        }
+
+        function updateSyncInfo() {
+            const t = lsGet(STORAGE_KEYS.lastSyncTime, null);
+            const el = document.getElementById('syncInfo');
+            if (!t) { el.innerText = "এখনো sync হয়নি"; return; }
+            const date = new Date(t);
+            const total = Object.values(TEAMS_DATA).reduce((s, arr) => s + (arr ? arr.length : 0), 0);
+            el.innerText = `${date.toLocaleString()} • মোট ${total} workers`;
+        }
+
+        // ============================================================
+        // TEAM DROPDOWN + BADGE
+        // ============================================================
+        function populateTeamDropdown() {
+            const select = document.getElementById("teamName");
+            const previousValue = select.value;
+
+            select.innerHTML = "";
+            const teamNames = Object.keys(TEAMS_DATA);
+
+            // Always start with placeholder (forces explicit selection → password prompt)
+            const placeholder = document.createElement("option");
+            placeholder.value = "";
+            placeholder.textContent = teamNames.length === 0
+                ? "-- কোনো team load হয়নি --"
+                : "-- Team সিলেক্ট করুন --";
+            select.appendChild(placeholder);
+
+            teamNames.forEach(name => {
+                const count = (TEAMS_DATA[name] || []).length;
+                const opt = document.createElement("option");
+                opt.value = name;
+                opt.textContent = `${name} Team (${count} workers)`;
+                select.appendChild(opt);
+            });
+
+            // Restore previous selection ONLY if team was already unlocked this session
+            // Otherwise leave on placeholder (forces re-auth)
+            if (previousValue && teamNames.includes(previousValue) && unlockedTeams.has(previousValue)) {
+                select.value = previousValue;
+                lastValidTeam = previousValue;
+            } else {
+                select.value = "";
+                lastValidTeam = "";
+            }
+        }
+
+        // ============================================================
+        // PER-TEAM PASSWORD GATE
+        // ============================================================
+
+        // Get effective password for a team (override > hardcoded)
+        function getCurrentPassword(team) {
+            const overrides = lsGet(STORAGE_KEYS.teamPasswords, {});
+            if (team in overrides) return overrides[team];
+            return TEAM_PASSWORDS[team];
+        }
+
+        // Save a new password (override) and lock that team so user re-enters it
+        function setTeamPassword(team, newPassword) {
+            const overrides = lsGet(STORAGE_KEYS.teamPasswords, {});
+            overrides[team] = newPassword;
+            lsSet(STORAGE_KEYS.teamPasswords, overrides);
+            // Force re-auth with the new password
+            unlockedTeams.delete(team);
+            persistUnlockedTeams();
+        }
+
+        function persistUnlockedTeams() {
+            lsSet(STORAGE_KEYS.unlockedTeams, Array.from(unlockedTeams));
+        }
+
+        function loadUnlockedTeams() {
+            const arr = lsGet(STORAGE_KEYS.unlockedTeams, []);
+            if (Array.isArray(arr)) {
+                unlockedTeams = new Set(arr);
+            }
+        }
+
+        function isTeamUnlocked(team) {
+            if (!team) return false;
+            // Custom teams (added via Manage) have no password — unrestricted
+            if (!(team in TEAM_PASSWORDS)) return true;
+            return unlockedTeams.has(team);
+        }
+
+        function unlockTeam(team) {
+            if (!team) return false;
+            if (isTeamUnlocked(team)) return true;
+            const entered = prompt(`🔒 ${team} Team এর password দিন:`);
+            if (entered === null) return false;  // User cancelled
+            const expected = getCurrentPassword(team);
+            if (entered === expected) {
+                unlockedTeams.add(team);
+                persistUnlockedTeams();   // 💾 remember across reloads
+                return true;
+            }
+            alert(`❌ ভুল password! ${team} Team access দেওয়া হলো না।`);
+            return false;
+        }
+
+        // ============================================================
+        // OTP EMAIL SENDING (for password change)
+        // ============================================================
+        function generateOtp() {
+            return String(Math.floor(100000 + Math.random() * 900000));
+        }
+
+        function maskEmail(email) {
+            if (!email || !email.includes("@")) return email || "(no email)";
+            const [local, domain] = email.split("@");
+            if (local.length <= 2) return local[0] + "***@" + domain;
+            return local[0] + "***" + local[local.length-1] + "@" + domain;
+        }
+
+        function isEmailJsConfigured() {
+            return EMAILJS_CONFIG.serviceId && EMAILJS_CONFIG.templateId && EMAILJS_CONFIG.publicKey;
+        }
+
+        async function sendOtpEmail(team, otp) {
+            const email = TEAM_EMAILS[team];
+            if (!email) {
+                throw new Error(`${team} Team এর email configured না`);
+            }
+
+            // Demo mode — EmailJS not configured, show OTP in alert
+            if (!isEmailJsConfigured() || typeof emailjs === 'undefined') {
+                alert(
+                    `📧 DEMO MODE — Real email পাঠানো হয়নি।\n\n` +
+                    `${team} Team এর OTP: ${otp}\n\n` +
+                    `(Real email পাঠাতে EMAILJS_CONFIG block fill করো — code এর top এ আছে)`
+                );
+                return { demo: true, email };
+            }
+
+            // Real send via EmailJS
+            const params = {
+                to_email:  email,
+                team_name: team,
+                otp:       otp,
+                from_name: "Panda Commander"
+            };
+
+            await emailjs.send(
+                EMAILJS_CONFIG.serviceId,
+                EMAILJS_CONFIG.templateId,
+                params,
+                { publicKey: EMAILJS_CONFIG.publicKey }
+            );
+
+            return { demo: false, email };
+        }
+
+        function onTeamChange() {
+            const select = document.getElementById("teamName");
+            const team = select.value;
+
+            if (!team) {
+                lastValidTeam = "";
+                updateTeamBadge();
+                renderWorkersPanel();
+                updateScopeUI();
+                return;
+            }
+
+            // Already unlocked? proceed
+            if (isTeamUnlocked(team)) {
+                lastValidTeam = team;
+                updateTeamBadge();
+                renderWorkersPanel();
+                updateScopeUI();
+                return;
+            }
+
+            // Need password
+            if (unlockTeam(team)) {
+                lastValidTeam = team;
+                updateTeamBadge();
+                renderWorkersPanel();
+                updateScopeUI();
+            } else {
+                // Cancelled or wrong — revert to last valid (or empty)
+                select.value = lastValidTeam || "";
+                updateTeamBadge();
+                renderWorkersPanel();
+                updateScopeUI();
+            }
+        }
+
+        function updateTeamBadge() {
+            const team = document.getElementById("teamName").value;
+            const badge = document.getElementById("teamBadge");
+            const totalBadge = document.getElementById("totalBadge");
+            if (!team) {
+                badge.innerText = "Team সিলেক্ট করো";
+                totalBadge.innerText = "🔒";
+                return;
+            }
+            if (!isTeamUnlocked(team)) {
+                badge.innerText = "🔒 " + team + " (Locked)";
+                totalBadge.innerText = "🔒";
+                return;
+            }
+            badge.innerText = team + " Team";
+            const count = (TEAMS_DATA[team] || []).length;
+            totalBadge.innerText = `${count} workers`;
+        }
+
+        // ============================================================
+        // WORKERS PANEL
+        // ============================================================
+        function renderWorkersPanel() {
+            const team = document.getElementById("teamName").value;
+            const panel = document.getElementById("workersPanel");
+            const toggleText = document.getElementById("workerToggleText");
+
+            // No team selected
+            if (!team) {
+                toggleText.innerText = "👥 Workers দেখুন";
+                panel.innerHTML = '<p style="padding: 16px; color: var(--text-muted); text-align: center;">প্রথমে একটা team সিলেক্ট করো।</p>';
+                return;
+            }
+
+            // Team locked — require password
+            if (!isTeamUnlocked(team)) {
+                toggleText.innerText = `🔒 ${team} — Locked`;
+                panel.innerHTML = `<div style="padding: 24px 16px; text-align: center;">
+                    <div style="font-size: 22px; margin-bottom: 8px;">🔒</div>
+                    <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 12px;">
+                        ${escapeHtml(team)} Team এর Workers দেখতে password দরকার।
+                    </p>
+                    <button class="btn-outline-warn" onclick="unlockCurrentTeam()">🔓 Unlock ${escapeHtml(team)} Team</button>
+                </div>`;
+                return;
+            }
+
+            // Team unlocked — show normal worker list
+            const workers = TEAMS_DATA[team] || [];
+            toggleText.innerText = `👥 ${workers.length} Workers ${workersPanelOpen ? 'লুকান' : 'দেখুন'}`;
+
+            if (workers.length === 0) {
+                panel.innerHTML = '<p style="padding: 16px; color: var(--text-muted); text-align: center;">কোনো worker পাওয়া যায়নি।</p>';
+                return;
+            }
+
+            const sel       = getSelectedWorkers(team);
+            const liveSel   = workers.filter(w => sel.has(w.workerId)).length;
+
+            let html = `
+                <div class="worker-tools">
+                    <div class="worker-tools-info">
+                        ✓ <strong>${liveSel}</strong> / ${workers.length} সিলেক্ট
+                    </div>
+                    <div class="worker-tools-actions">
+                        <button type="button" class="btn-mini" onclick="selectAllWorkers()">✓ সব</button>
+                        <button type="button" class="btn-mini" onclick="clearWorkerSelection()">✕ ক্লিয়ার</button>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:36px;">✓</th>
+                            <th>#</th>
+                            <th>Username</th>
+                            <th>Worker ID</th>
+                            <th>RDP (IP)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            workers.forEach((w, idx) => {
+                const checked = sel.has(w.workerId);
+                const wid = escapeHtml(w.workerId);
+                html += `<tr data-row-worker="${wid}" class="${checked ? 'worker-selected' : ''}">
+                    <td><input type="checkbox" class="worker-check" ${checked ? 'checked' : ''} onchange="toggleWorkerSelection('${wid}', this.checked)"></td>
+                    <td>${idx + 1}</td>
+                    <td>${escapeHtml(w.username || '-')}</td>
+                    <td><code>${wid}</code></td>
+                    <td><span class="ip-pill">${escapeHtml(w.ip || '-')}</span></td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            panel.innerHTML = html;
+        }
+
+        // Helper: unlock the currently-selected team (used by inline button in panel)
+        function unlockCurrentTeam() {
+            const team = document.getElementById("teamName").value;
+            if (!team) return;
+            if (unlockTeam(team)) {
+                lastValidTeam = team;
+                updateTeamBadge();
+                renderWorkersPanel();
+                updateScopeUI();
+            }
+        }
+
+        function toggleWorkers() {
+            const team = document.getElementById("teamName").value;
+            // If locked, the toggle becomes an unlock action
+            if (team && !isTeamUnlocked(team)) {
+                unlockCurrentTeam();
+                return;
+            }
+            const panel = document.getElementById("workersPanel");
+            workersPanelOpen = !workersPanelOpen;
+            panel.style.display = workersPanelOpen ? "block" : "none";
+            // Sync the arrow rotation via class
+            const toggleBtn = document.getElementById("workersToggleBtn");
+            if (toggleBtn) toggleBtn.classList.toggle("open", workersPanelOpen);
+            renderWorkersPanel();
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
+        // ============================================================
+        // PASSWORD LOCK (soft protection — prevents accidental edits)
+        // ============================================================
+        function applyLockState() {
+            const lockBar    = document.getElementById('lockBar');
+            const lockStatus = document.getElementById('lockStatus');
+            const btnUnlock  = document.getElementById('btnUnlock');
+            const section    = document.getElementById('lockedSection');
+
+            if (isUnlocked) {
+                lockBar.classList.add('unlocked');
+                lockStatus.innerHTML = '<span class="icon">🔓</span> Unlocked — edit করতে পারবে';
+                btnUnlock.innerText = '🔒 Re-lock';
+                btnUnlock.className = 'btn-relock';
+                btnUnlock.onclick = relock;
+                section.classList.add('unlocked');
+            } else {
+                lockBar.classList.remove('unlocked');
+                lockStatus.innerHTML = '<span class="icon">🔒</span> Edit করতে password দিতে হবে';
+                btnUnlock.innerText = '🔓 Unlock';
+                btnUnlock.className = 'btn-unlock';
+                btnUnlock.onclick = promptUnlock;
+                section.classList.remove('unlocked');
+            }
+        }
+
+        function promptUnlock() {
+            const entered = prompt("🔒 Edit করার জন্য password দিন:");
+            if (entered === null) return;  // User cancelled
+            if (entered === ADMIN_PASSWORD) {
+                isUnlocked = true;
+                applyLockState();
+                renderTeamList();  // Re-render so Remove buttons reflect unlock state
+            } else {
+                alert("❌ ভুল password!");
+            }
+        }
+
+        function relock() {
+            isUnlocked = false;
+            applyLockState();
+            renderTeamList();
+        }
+
+        function requireUnlock() {
+            // For actions called outside the modal (or as a guard), this returns
+            // true if unlocked, otherwise prompts the user. Returns true/false.
+            if (isUnlocked) return true;
+            const entered = prompt("🔒 এই কাজ করতে password দিতে হবে:");
+            if (entered === null) return false;
+            if (entered === ADMIN_PASSWORD) {
+                isUnlocked = true;
+                return true;
+            }
+            alert("❌ ভুল password!");
+            return false;
+        }
+
+        // ============================================================
+        // MANAGE TEAMS MODAL
+        // ============================================================
+        function openManageModal() {
+            // Always start LOCKED when modal opens (force re-auth each session)
+            isUnlocked = false;
+            applyLockState();
+
+            // Sheet ID also starts hidden — fresh password each open
+            sheetIdRevealed = false;
+            applySheetIdRevealState();
+
+            renderTeamList();
+            document.getElementById("manageModal").classList.add("show");
+            document.getElementById("newTeamName").value = "";
+            document.getElementById("newTeamGid").value = "";
+            setTeamAddStatus("", "");
+            checkTeamAddBtn();
+
+            setSheetIdStatus("", "");
+        }
+        function closeManageModal() {
+            document.getElementById("manageModal").classList.remove("show");
+            isUnlocked = false;  // Lock again when closed
+            sheetIdRevealed = false;
+        }
+        // Click outside modal to close
+        document.addEventListener('click', function(e) {
+            if (e.target.id === 'manageModal') closeManageModal();
+        });
+
+        // ============================================================
+        // SHEET ID REVEAL/HIDE (extra password layer)
+        // ============================================================
+        function applySheetIdRevealState() {
+            const hiddenView   = document.getElementById("sheetIdHiddenView");
+            const revealedView = document.getElementById("sheetIdRevealedView");
+            const buttons      = document.getElementById("sheetIdButtons");
+            if (sheetIdRevealed) {
+                hiddenView.style.display   = "none";
+                revealedView.style.display = "block";
+                buttons.style.display      = "flex";
+                document.getElementById("sheetIdInput").value = getSheetId();
+            } else {
+                hiddenView.style.display   = "block";
+                revealedView.style.display = "none";
+                buttons.style.display      = "none";
+                document.getElementById("sheetIdInput").value = "";  // Clear the field
+            }
+        }
+
+        function revealSheetId() {
+            const entered = prompt("🔒 Sheet ID দেখতে password দিন:");
+            if (entered === null) return;
+            if (entered === ADMIN_PASSWORD) {
+                sheetIdRevealed = true;
+                applySheetIdRevealState();
+            } else {
+                alert("❌ ভুল password!");
+            }
+        }
+
+        function hideSheetId() {
+            sheetIdRevealed = false;
+            applySheetIdRevealState();
+            setSheetIdStatus("", "");
+        }
+
+        function setSheetIdStatus(msg, color) {
+            const el = document.getElementById("sheetIdStatus");
+            el.innerText = msg;
+            el.style.color = color || "";
+        }
+
+        async function saveSheetId() {
+            if (!requireUnlock()) return;
+            applyLockState();
+
+            // Sheet ID must be revealed first
+            if (!sheetIdRevealed) {
+                setSheetIdStatus("⚠️ আগে Sheet ID reveal করো!", "#e74c3c");
+                return;
+            }
+
+            const newId = document.getElementById("sheetIdInput").value.trim();
+            if (!newId) {
+                setSheetIdStatus("⚠️ Sheet ID খালি!", "#e74c3c");
+                return;
+            }
+            // Sheet IDs are alphanumeric + - + _
+            if (!/^[a-zA-Z0-9_-]+$/.test(newId)) {
+                setSheetIdStatus("⚠️ Invalid Sheet ID format!", "#e74c3c");
+                return;
+            }
+
+            // Save (or clear if same as default)
+            if (newId === SHEET_ID) {
+                localStorage.removeItem(STORAGE_KEYS.customSheetId);
+            } else {
+                lsSet(STORAGE_KEYS.customSheetId, newId);
+            }
+
+            setSheetIdStatus("✅ Saved — refreshing...", "#2ecc71");
+            await refreshTeamsData();
+            renderTeamList();
+            setTimeout(() => setSheetIdStatus("", ""), 2000);
+        }
+
+        function resetSheetId() {
+            if (!requireUnlock()) return;
+            applyLockState();
+            if (!sheetIdRevealed) {
+                setSheetIdStatus("⚠️ আগে Sheet ID reveal করো!", "#e74c3c");
+                return;
+            }
+            localStorage.removeItem(STORAGE_KEYS.customSheetId);
+            document.getElementById("sheetIdInput").value = SHEET_ID;
+            setSheetIdStatus("✅ Default এ reset হয়েছে — Save চাপুন", "#2ecc71");
+        }
+
+        function renderTeamList() {
+            const list = document.getElementById("teamList");
+            const teams = getAllTeamConfig();
+            list.innerHTML = teams.map(t => {
+                const count = (TEAMS_DATA[t.name] || []).length;
+                let actionBtn;
+                if (!t.isCustom) {
+                    actionBtn = `<button class="btn-mini-default" disabled title="Default team — removed করা যায় না">Default</button>`;
+                } else if (!isUnlocked) {
+                    actionBtn = `<button class="btn-mini-default" disabled title="Unlock করো remove করতে">🔒 Locked</button>`;
+                } else {
+                    actionBtn = `<button class="btn-mini-remove" onclick="removeCustomTeam('${escapeHtml(t.name)}')">🗑 Remove</button>`;
+                }
+                return `<div class="team-row">
+                    <div class="team-info">
+                        <b>${escapeHtml(t.name)}</b> — ${count} workers
+                        <small>gid: ${escapeHtml(t.gid)}</small>
+                    </div>
+                    ${actionBtn}
+                </div>`;
+            }).join('');
+        }
+
+        function checkTeamAddBtn() {
+            const name = document.getElementById("newTeamName").value.trim();
+            const gid  = document.getElementById("newTeamGid").value.trim();
+            document.getElementById("btnTeamAdd").disabled = !(name && gid);
+            const el = document.getElementById("teamAddStatus");
+            if (el.innerText) setTeamAddStatus("", "");
+        }
+
+        function setTeamAddStatus(msg, color) {
+            const el = document.getElementById("teamAddStatus");
+            el.innerText = msg;
+            el.style.color = color || "";
+        }
+
+        async function addNewTeam() {
+            if (!requireUnlock()) return;
+            applyLockState();
+
+            const name = document.getElementById("newTeamName").value.trim();
+            const gid  = document.getElementById("newTeamGid").value.trim();
+
+            if (!name || !gid) {
+                setTeamAddStatus("⚠️ দুইটাই পূরণ করতে হবে!", "#e74c3c");
+                return;
+            }
+            if (!/^\d+$/.test(gid)) {
+                setTeamAddStatus("⚠️ GID শুধু সংখ্যা হতে হবে!", "#e74c3c");
+                return;
+            }
+            // Duplicate check
+            const existing = getAllTeamConfig();
+            if (existing.some(t => t.name.toLowerCase() === name.toLowerCase())) {
+                setTeamAddStatus("⚠️ এই Team Name আগে থেকেই আছে!", "#e74c3c");
+                return;
+            }
+            if (existing.some(t => String(t.gid) === gid)) {
+                setTeamAddStatus("⚠️ এই GID আগে থেকেই অন্য Team এ আছে!", "#e74c3c");
+                return;
+            }
+
+            const customs = lsGet(STORAGE_KEYS.customTeams, []);
+            customs.push({ name, gid });
+            lsSet(STORAGE_KEYS.customTeams, customs);
+
+            setTeamAddStatus(`✅ "${name}" যোগ হয়েছে — fetch করছি...`, "#2ecc71");
+
+            // Refresh sheet data so the new team is loaded
+            await refreshTeamsData();
+            renderTeamList();
+
+            document.getElementById("newTeamName").value = "";
+            document.getElementById("newTeamGid").value = "";
+            checkTeamAddBtn();
+
+            setTimeout(() => setTeamAddStatus("", ""), 2000);
+        }
+
+        async function removeCustomTeam(name) {
+            if (!requireUnlock()) return;
+            applyLockState();
+
+            if (!confirm(`"${name}" team remove করতে চাও?`)) return;
+            const customs = lsGet(STORAGE_KEYS.customTeams, []);
+            const updated = customs.filter(t => t.name !== name);
+            lsSet(STORAGE_KEYS.customTeams, updated);
+
+            // Remove from local state too
+            delete TEAMS_DATA[name];
+            lsSet(STORAGE_KEYS.cachedTeamsData, TEAMS_DATA);
+
+            renderTeamList();
+            populateTeamDropdown();
+            updateTeamBadge();
+            renderWorkersPanel();
+            updateSyncInfo();
+        }
+
+        // ============================================================
+        // HIT INPUT lock/unlock
+        // ============================================================
+        function updateHitInput() {
+            const preset = document.getElementById("presetHits").value;
+            const hitInput = document.getElementById("hitId");
+            const lockIcon = document.getElementById("lockIcon");
+            if (preset) {
+                hitInput.value = preset;
+                hitInput.readOnly = true;
+                lockIcon.style.display = "inline";
+            } else {
+                hitInput.value = "";
+                hitInput.readOnly = false;
+                lockIcon.style.display = "none";
+                hitInput.focus();
+            }
+            updateDeletePresetBtn();
+        }
+
+        // Enable delete button only when a CUSTOM preset is selected
+        function updateDeletePresetBtn() {
+            const select = document.getElementById("presetHits");
+            const btn = document.getElementById("btnDeletePreset");
+            if (!btn) return;
+            const opt = select.options[select.selectedIndex];
+            const isCustom = !!(opt && opt.dataset && opt.dataset.custom === "true");
+            btn.disabled = !isCustom;
+        }
+
+        // ============================================================
+        // CUSTOM PRESET (HIT) STORAGE
+        // ============================================================
+        function loadCustomPresets() {
+            return lsGet(STORAGE_KEYS.customPresets, []);
+        }
+        function saveCustomPresets(presets) {
+            lsSet(STORAGE_KEYS.customPresets, presets);
+        }
+        function renderCustomPresets() {
+            const select = document.getElementById("presetHits");
+            Array.from(select.querySelectorAll('option[data-custom="true"]')).forEach(o => o.remove());
+            loadCustomPresets().forEach(p => {
+                if (!p || !p.id) return;
+                const opt = document.createElement("option");
+                opt.value = p.id;
+                opt.textContent = `${p.name} ($${p.price})`;
+                opt.dataset.custom = "true";
+                select.appendChild(opt);
+            });
+            updateDeletePresetBtn();
+        }
+
+        function deleteSelectedPreset() {
+            const select = document.getElementById("presetHits");
+            const opt = select.options[select.selectedIndex];
+            if (!opt || opt.dataset.custom !== "true") {
+                alert("⚠️ শুধু কাস্টম প্রিসেট (নিজে যোগ করা) ডিলিট করা যাবে।");
+                return;
+            }
+            const id = opt.value;
+            const label = opt.textContent;
+            if (!confirm(`🗑️ "${label}" প্রিসেট ডিলিট করতে চাও?`)) return;
+
+            const customs = loadCustomPresets().filter(p => p && p.id !== id);
+            saveCustomPresets(customs);
+            renderCustomPresets();
+            select.value = "";
+            updateHitInput();
+            setStatus(`🗑️ "${label}" প্রিসেট ডিলিট হয়েছে।`, "success");
+        }
+
+        function toggleAddForm() {
+            const form = document.getElementById("addForm");
+            const isHidden = form.style.display === "none" || form.style.display === "";
+            if (isHidden) {
+                clearAddForm();
+                form.style.display = "block";
+                document.getElementById("newReqId").focus();
+            } else {
+                form.style.display = "none";
+            }
+        }
+        function cancelAddForm() {
+            clearAddForm();
+            document.getElementById("addForm").style.display = "none";
+        }
+        function clearAddForm() {
+            document.getElementById("newReqId").value = "";
+            document.getElementById("newReqName").value = "";
+            document.getElementById("newReqPrice").value = "";
+            setAddStatus("", "");
+            checkAddBtn();
+        }
+        function setAddStatus(msg, color) {
+            const el = document.getElementById("addStatus");
+            el.innerText = msg;
+            el.style.color = color || "";
+        }
+        function checkAddBtn() {
+            const id    = document.getElementById("newReqId").value.trim();
+            const name  = document.getElementById("newReqName").value.trim();
+            const price = document.getElementById("newReqPrice").value.trim();
+            document.getElementById("btnAdd").disabled = !(id && name && price);
+            const el = document.getElementById("addStatus");
+            if (el.innerText) setAddStatus("", "");
+        }
+        function addNewPreset() {
+            const id    = document.getElementById("newReqId").value.trim();
+            const name  = document.getElementById("newReqName").value.trim();
+            const priceRaw = document.getElementById("newReqPrice").value.trim().replace(/\$/g, "").replace(/,/g, "").trim();
+            if (!id || !name || !priceRaw) { setAddStatus("⚠️ সব box পূরণ করতে হবে!", "#e74c3c"); return; }
+            const priceNum = parseFloat(priceRaw);
+            if (isNaN(priceNum) || priceNum <= 0) { setAddStatus("⚠️ Price ekti valid sonkkha din (e.g. 0.05)", "#e74c3c"); return; }
+            const price = priceNum.toFixed(2);
+            const select = document.getElementById("presetHits");
+            for (let i = 0; i < select.options.length; i++) {
+                if (select.options[i].value && select.options[i].value === id) {
+                    setAddStatus("⚠️ ei HIT ID age thekei dropdown e ache!", "#e74c3c"); return;
+                }
+            }
+            const customs = loadCustomPresets();
+            customs.push({ id, name, price });
+            saveCustomPresets(customs);
+            renderCustomPresets();
+            select.value = id;
+            updateHitInput();
+            setAddStatus(`✅ "${name} ($${price})" যোগ হয়েছে!`, "#2ecc71");
+            setTimeout(() => {
+                clearAddForm();
+                document.getElementById("addForm").style.display = "none";
+            }, 1200);
+        }
+
+        // ============================================================
+        // CHANGE PASSWORD MODAL (3-step flow with email OTP)
+        // ============================================================
+        let cpState = { team: null, otp: null, currentVerified: false };
+
+        function openChangePasswordModal() {
+            const team = document.getElementById("teamName").value;
+            if (!team) {
+                alert("⚠️ আগে একটা team সিলেক্ট করো!");
+                return;
+            }
+            if (!(team in TEAM_PASSWORDS)) {
+                alert("ℹ️ Custom team এর কোনো password নেই — change করার দরকার নেই।");
+                return;
+            }
+
+            cpState = { team, otp: null, currentVerified: false };
+            document.getElementById("cpTeamName").innerText = team;
+
+            // Reset all fields and statuses
+            ["cpCurrentPassword", "cpOtpInput", "cpNewPassword", "cpConfirmPassword"]
+                .forEach(id => document.getElementById(id).value = "");
+            [1, 2, 3].forEach(i => setCpStatus(i, "", ""));
+            document.getElementById("cpSaveBtn").disabled = true;
+
+            cpShowStep(1);
+            document.getElementById("changePasswordModal").classList.add("show");
+        }
+
+        function closeChangePasswordModal() {
+            document.getElementById("changePasswordModal").classList.remove("show");
+            cpState = { team: null, otp: null, currentVerified: false };
+        }
+
+        // Click outside to close
+        document.addEventListener('click', function(e) {
+            if (e.target.id === 'changePasswordModal') closeChangePasswordModal();
+        });
+
+        function cpShowStep(n) {
+            [1, 2, 3, 4].forEach(i => {
+                const stepEl = document.getElementById(`cpStep${i}`);
+                if (stepEl) stepEl.style.display = (i === n) ? "block" : "none";
+            });
+            // Indicators (only 1, 2, 3 — step 4 is "done")
+            [1, 2, 3].forEach(i => {
+                const ind = document.getElementById(`stepInd${i}`);
+                if (!ind) return;
+                ind.classList.toggle("active", i <= n);
+                ind.classList.toggle("done", i < n || n === 4);
+            });
+        }
+
+        function setCpStatus(step, msg, color) {
+            const el = document.getElementById(`cpStep${step}Status`);
+            if (!el) return;
+            el.innerText = msg;
+            el.style.color = color || "";
+        }
+
+        async function cpVerifyCurrent() {
+            const entered = document.getElementById("cpCurrentPassword").value;
+            if (!entered) {
+                setCpStatus(1, "⚠️ Password দাও!", "#e74c3c");
+                return;
+            }
+            const expected = getCurrentPassword(cpState.team);
+            if (entered !== expected) {
+                setCpStatus(1, "❌ ভুল password!", "#e74c3c");
+                return;
+            }
+            cpState.currentVerified = true;
+            setCpStatus(1, "✅ Verified", "#2ecc71");
+            await cpSendOtp();
+        }
+
+        async function cpSendOtp() {
+            const team = cpState.team;
+            const otp = generateOtp();
+            cpState.otp = otp;
+
+            cpShowStep(2);
+            setCpStatus(2, "📤 OTP পাঠানো হচ্ছে...", "var(--accent)");
+
+            try {
+                const result = await sendOtpEmail(team, otp);
+                document.getElementById("cpEmailMasked").innerText = maskEmail(result.email);
+                if (result.demo) {
+                    setCpStatus(2, "ℹ️ Demo mode — Alert এ OTP দেখো (EmailJS configure করতে code দেখো)", "#f59e0b");
+                } else {
+                    setCpStatus(2, "✅ Email পাঠানো হয়েছে — Inbox/Spam check করো", "#2ecc71");
+                }
+            } catch (err) {
+                // Extract a meaningful error message from various error shapes
+                console.error("EmailJS send failed:", err);  // full debug info in console
+
+                let detail = "Unknown error";
+                if (typeof err === "string") {
+                    detail = err;
+                } else if (err) {
+                    if (err.text)         detail = err.text;          // EmailJS text reason
+                    else if (err.message) detail = err.message;        // standard JS Error
+                    else if (err.status)  detail = `HTTP ${err.status}`;
+                    else {
+                        try { detail = JSON.stringify(err); } catch (_) {}
+                    }
+                }
+
+                // Add hints for common cases
+                let hint = "";
+                if (/public key|api key|invalid|unauthor/i.test(detail)) {
+                    hint = " — Public Key ভুল বা EmailJS account এ allowed origins এ এই domain add করা নাই।";
+                } else if (/template/i.test(detail)) {
+                    hint = " — Template ID ভুল, অথবা template এ {{to_email}} variable নেই।";
+                } else if (/service/i.test(detail)) {
+                    hint = " — Service ID ভুল বা Gmail re-authorize করতে হবে।";
+                } else if (/recipient|to|address/i.test(detail)) {
+                    hint = " — Template এর 'To Email' field এ {{to_email}} বসানো আছে কিনা check করো।";
+                }
+
+                setCpStatus(2, `❌ Email fail: ${detail}${hint}`, "#e74c3c");
+            }
+        }
+
+        function cpResendOtp() {
+            cpSendOtp();
+        }
+
+        function cpVerifyOtp() {
+            const entered = document.getElementById("cpOtpInput").value.trim();
+            if (!entered) {
+                setCpStatus(2, "⚠️ OTP দাও!", "#e74c3c");
+                return;
+            }
+            if (entered !== cpState.otp) {
+                setCpStatus(2, "❌ ভুল OTP!", "#e74c3c");
+                return;
+            }
+            setCpStatus(2, "✅ Verified", "#2ecc71");
+            cpShowStep(3);
+        }
+
+        function checkCpStep3() {
+            const newPw     = document.getElementById("cpNewPassword").value;
+            const confirmPw = document.getElementById("cpConfirmPassword").value;
+            const btn       = document.getElementById("cpSaveBtn");
+
+            const longEnough = newPw.length >= 6;
+            const matches    = newPw && newPw === confirmPw;
+            btn.disabled = !(longEnough && matches);
+
+            if (newPw && !longEnough) {
+                setCpStatus(3, "⚠️ কমপক্ষে ৬ character দরকার", "#e74c3c");
+            } else if (newPw && confirmPw && newPw !== confirmPw) {
+                setCpStatus(3, "⚠️ Password match হয়নি", "#e74c3c");
+            } else if (longEnough && matches) {
+                setCpStatus(3, "✅ Password ঠিক আছে — Save চাপো", "#2ecc71");
+            } else {
+                setCpStatus(3, "", "");
+            }
+        }
+
+        function cpSavePassword() {
+            const newPw = document.getElementById("cpNewPassword").value;
+            if (newPw.length < 6) return;
+            setTeamPassword(cpState.team, newPw);
+            cpShowStep(4);
+            // Refresh UI to reflect locked state
+            updateTeamBadge();
+            renderWorkersPanel();
+        }
+
+        // ============================================================
+        // SEND COMMAND (Firebase)
+        // ============================================================
+
+        function setStatus(msg, type) {
+            const status = document.getElementById("status");
+            status.innerHTML = msg;
+            status.className = type || "";
+        }
+        function setActionButtonsDisabled(disabled) {
+            document.getElementById("btnStart").disabled = disabled;
+            document.getElementById("btnStop").disabled  = disabled;
+            const btnCollect = document.getElementById("btnCollect");
+            if (btnCollect) btnCollect.disabled = disabled;
+            const btnStopSelected = document.getElementById("btnStopSelected");
+            if (btnStopSelected) btnStopSelected.disabled = disabled;
+        }
+
+        async function sendCommand(action) {
+            let dbUrl = document.getElementById("dbUrl").value.trim();
+            const team  = document.getElementById("teamName").value;
+            const hitId = document.getElementById("hitId").value.trim();
+            if (!team)  { setStatus("⚠️ একটি team সিলেক্ট করো!", "error"); return; }
+
+            // GUARD: Per-team password
+            if (!isTeamUnlocked(team)) {
+                if (!unlockTeam(team)) {
+                    setStatus(`🔒 ${team} Team এর command পাঠাতে password দরকার!`, "error");
+                    return;
+                }
+                updateTeamBadge();
+                renderWorkersPanel();
+                updateScopeUI();
+            }
+
+            // STOP_ALL doesn't need a hitId (it's a panic stop — clears everything)
+            const isStopAll      = action === 'stop_all';
+            const isStopSelected = action === 'stop';
+            if (!isStopAll && !hitId) {
+                setStatus("⚠️ দয়া করে একটি HIT ID দিন!", "error");
+                return;
+            }
+            if (!dbUrl) { setStatus("⚠️ Database URL খালি!", "error"); return; }
+            if (dbUrl.endsWith("/")) dbUrl = dbUrl.slice(0, -1);
+
+            // Confirm before stop_all (destructive — affects ALL running HITs)
+            if (isStopAll) {
+                if (!confirm(`⚠️ ${team} Team এর সব running HIT বন্ধ করতে চাও?\n\nএটা সব HIT থামাবে — শুধু একটা না।`)) {
+                    return;
+                }
+            }
+            // Confirm before targeted stop (less destructive but still useful)
+            if (isStopSelected) {
+                if (!confirm(`🎯 শুধু এই HIT ID টা বন্ধ করতে চাও?\n\nHIT: ${hitId}\n\nবাকি running HITs panda-তে চলতে থাকবে।`)) {
+                    return;
+                }
+            }
+
+            // Resolve target workers based on scope (all | selected subset)
+            const scopeMode   = getWorkerScope(team);
+            const allWorkers  = TEAMS_DATA[team] || [];
+            const teamWorkers = (scopeMode === 'selected')
+                ? allWorkers.filter(w => getSelectedWorkers(team).has(w.workerId))
+                : allWorkers;
+
+            if (teamWorkers.length === 0) {
+                if (scopeMode === 'selected') {
+                    setStatus("⚠️ \"Select Worked\" mode — কিন্তু কোনো worker tick করা নেই! Workers panel খুলে worker সিলেক্ট করো বা \"My Team All\" mode-এ যাও।", "error");
+                } else {
+                    setStatus("⚠️ এই team-এ কোনো worker নেই!", "error");
+                }
+                return;
+            }
+
+            const finalUrl = `${dbUrl}/teams/${team}.json`;
+
+            // Build payload — action-specific shape
+            const payload = {
+                action: action,
+                time: Date.now(),
+                team: team,
+                workers: teamWorkers,
+                workerCount: teamWorkers.length,
+                scope: scopeMode,    // 'all' | 'selected' — RDP scripts can honor this
+                workerIds: teamWorkers.map(w => w.workerId)   // explicit allow-list for selected scope
+            };
+            // Only include groupId for actions that target a specific HIT
+            if (!isStopAll) {
+                payload.groupId = hitId;
+            } else {
+                payload.groupId = null;     // explicit signal for "no specific HIT"
+                payload.stopAll = true;     // backward-compat flag for RDP scripts
+            }
+            // Mark collect-only so RDP can distinguish from full start
+            if (action === 'collect') {
+                payload.collectOnly = true;
+            }
+            // Mark targeted stop so RDP scripts only stop this one HIT
+            if (isStopSelected) {
+                payload.stopAll   = false;   // explicit: NOT a stop-all
+                payload.stopOne   = true;    // backward-compat flag for RDP scripts
+            }
+
+            // Friendly action label for UI feedback
+            const actionLabel = ({
+                'start'    : 'START (Collect + GoHam)',
+                'collect'  : 'COLLECT ONLY',
+                'stop_all' : 'STOP ALL HITS',
+                'stop'     : 'STOP SELECTED REQUESTER'
+            })[action] || action.toUpperCase();
+
+            const scopeLabel = (scopeMode === 'selected')
+                ? `🎯 Selected ${teamWorkers.length}/${allWorkers.length}`
+                : `👥 All ${teamWorkers.length}`;
+
+            setActionButtonsDisabled(true);
+            setStatus(`<span class="spinner"></span> পাঠানো হচ্ছে... (${scopeLabel} RDPs)`, "loading");
+
+            const controller = new AbortController();
+            const timeoutId  = setTimeout(() => controller.abort(), 15000);
+
+            try {
+                const res = await fetch(finalUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+                await res.json();
+
+                setStatus(`✅ [ ${team} ] ${scopeLabel} → ${teamWorkers.length} জন RDP কে কমান্ড : ${actionLabel}`, "success");
+                const timeStr = new Date().toLocaleTimeString();
+                document.getElementById("lastAction").innerText =
+                    `সর্বশেষ: ${actionLabel} → ${team} (${scopeLabel}) [${timeStr}]`;
+            } catch (err) {
+                clearTimeout(timeoutId);
+                if (err.name === "AbortError") {
+                    setStatus("❌ Timeout! সার্ভার রেসপন্ড করছে না (১৫ সেকেন্ড)।", "error");
+                } else {
+                    setStatus(`❌ Error: ${err.message}. কানেকশন চেক করুন।`, "error");
+                }
+            } finally {
+                setActionButtonsDisabled(false);
+            }
+        }
+
+        // ============================================================
+        // FORM-STATE PERSISTENCE (team, hitId, preset)
+        // ============================================================
+        function saveFormState() {
+            const team    = document.getElementById("teamName").value;
+            const hitId   = document.getElementById("hitId").value.trim();
+            const preset  = document.getElementById("presetHits").value;
+            if (team)   lsSet(STORAGE_KEYS.lastTeam,    team);
+            else        localStorage.removeItem(STORAGE_KEYS.lastTeam);
+            lsSet(STORAGE_KEYS.lastHitId,   hitId);
+            lsSet(STORAGE_KEYS.lastPreset,  preset);
+        }
+
+        function restoreFormState() {
+            // Team — only if it's still in the data AND already unlocked this session
+            const lastTeam = lsGet(STORAGE_KEYS.lastTeam, "");
+            if (lastTeam
+                    && Object.keys(TEAMS_DATA).includes(lastTeam)
+                    && unlockedTeams.has(lastTeam)) {
+                const sel = document.getElementById("teamName");
+                sel.value = lastTeam;
+                lastValidTeam = lastTeam;
+                updateTeamBadge();
+                renderWorkersPanel();
+                updateScopeUI();
+            }
+
+            // Preset — restoring this also fills in #hitId (via updateHitInput)
+            const lastPreset = lsGet(STORAGE_KEYS.lastPreset, "");
+            const presetSel  = document.getElementById("presetHits");
+            if (lastPreset) {
+                const exists = Array.from(presetSel.options).some(o => o.value === lastPreset);
+                if (exists) {
+                    presetSel.value = lastPreset;
+                    updateHitInput();
+                }
+            }
+
+            // Free-form hitId — only if no preset locked the field
+            const lastHitId = lsGet(STORAGE_KEYS.lastHitId, "");
+            const hitInput  = document.getElementById("hitId");
+            if (lastHitId && !hitInput.value && !hitInput.readOnly) {
+                hitInput.value = lastHitId;
+            }
+        }
+
+        // Wire up listeners that save state on every change
+        function wireFormStatePersistence() {
+            const hitInput = document.getElementById("hitId");
+            if (hitInput) hitInput.addEventListener("input", saveFormState);
+
+            // team and preset already have onchange handlers — chain save into them
+            const teamSel = document.getElementById("teamName");
+            if (teamSel) teamSel.addEventListener("change", saveFormState);
+
+            const presetSel = document.getElementById("presetHits");
+            if (presetSel) presetSel.addEventListener("change", saveFormState);
+        }
+
+        // ============================================================
+        // BST SCHEDULED AUTO-RUN
+        // ============================================================
+        // The HIT to run during every scheduled window — hardcoded by
+        // request. ("Data Science Group, The New York Times" @ $0.04)
+        const SCHEDULED_GROUP_ID = '3HDDSJH816INDBSTV3MKXL5V2CWPWV';
+        const RESTORE_DELAY_MS   = 5000;   // 5s wait between STOP_ALL and START
+
+        // Windows are in BST (UTC+6 — Bangladesh has no DST).
+        const SCHEDULE_WINDOWS = [
+            { id: 'w1', label: '02:00 - 02:30 AM', startMin:  120, endMin:  150 },
+            { id: 'w2', label: '06:00 - 06:30 AM', startMin:  360, endMin:  390 },
+            { id: 'w3', label: '11:00 - 11:30 AM', startMin:  660, endMin:  690 },
+            { id: 'w4', label: '04:00 - 04:30 PM', startMin:  960, endMin:  990 },
+            { id: 'w5', label: '09:00 - 09:30 PM', startMin: 1260, endMin: 1290 }
+        ];
+
+        function loadScheduleMaster()  { return !!lsGet(STORAGE_KEYS.scheduleConfig, { masterEnabled: false }).masterEnabled; }
+        function saveScheduleMaster(v) { lsSet(STORAGE_KEYS.scheduleConfig, { masterEnabled: !!v }); }
+
+        function loadScheduleState()   { return lsGet(STORAGE_KEYS.scheduleState, {}); }
+        function saveScheduleState(s)  { lsSet(STORAGE_KEYS.scheduleState, s); }
+
+        function loadSnapshots()       { return lsGet(STORAGE_KEYS.scheduleSnapshots, {}); }
+        function saveSnapshots(s)      { lsSet(STORAGE_KEYS.scheduleSnapshots, s); }
+
+        function getBstMinutes() {
+            const bst = new Date(Date.now() + 6 * 60 * 60 * 1000);
+            return bst.getUTCHours() * 60 + bst.getUTCMinutes();
+        }
+        function getBstClockString() {
+            const bst = new Date(Date.now() + 6 * 60 * 60 * 1000);
+            const hh = String(bst.getUTCHours()).padStart(2, '0');
+            const mm = String(bst.getUTCMinutes()).padStart(2, '0');
+            const ss = String(bst.getUTCSeconds()).padStart(2, '0');
+            return `${hh}:${mm}:${ss} BST`;
+        }
+
+        function renderScheduleWindows() {
+            const masterOn = loadScheduleMaster();
+            const state    = loadScheduleState();
+            const nowMin   = getBstMinutes();
+            const wrap     = document.getElementById('scheduleWindows');
+            wrap.innerHTML = '';
+
+            SCHEDULE_WINDOWS.forEach(w => {
+                const inWindow = (nowMin >= w.startMin && nowMin < w.endMin);
+                const isActive = inWindow && masterOn && state[w.id] === 'running';
+
+                const row = document.createElement('div');
+                row.className = 'schedule-row';
+                if (isActive) row.classList.add('active');
+                if (!masterOn) row.classList.add('disabled');
+
+                row.innerHTML = `
+                    <div class="win-label">${w.label}</div>
+                    <div class="win-status">${isActive ? 'RUNNING' : (inWindow ? 'WINDOW' : 'IDLE')}</div>
+                `;
+                wrap.appendChild(row);
+            });
+        }
+
+        function onScheduleMasterChange() {
+            const on = document.getElementById('scheduleMaster').checked;
+            saveScheduleMaster(on);
+            document.getElementById('scheduleMasterLabel').textContent = on ? 'ON' : 'OFF';
+            renderScheduleWindows();
+            scheduleLog(on ? 'Scheduler enabled' : 'Scheduler disabled', on ? 'ok' : 'warn');
+        }
+
+        function restoreScheduleUi() {
+            const on = loadScheduleMaster();
+            document.getElementById('scheduleMaster').checked = on;
+            document.getElementById('scheduleMasterLabel').textContent = on ? 'ON' : 'OFF';
+            renderScheduleWindows();
+        }
+
+        // ---- log helper ----
+        function scheduleLog(msg, kind) {
+            const box = document.getElementById('scheduleLog');
+            const ts = new Date().toLocaleTimeString();
+            const cls = (kind === 'ok' || kind === 'warn' || kind === 'err') ? kind : '';
+            const line = document.createElement('div');
+            line.className = 'log-line' + (cls ? ' ' + cls : '');
+            line.textContent = `[${ts}] ${msg}`;
+            if (box.querySelector('.log-line') === null) box.innerHTML = '';
+            box.appendChild(line);
+            // Trim to last 25 entries
+            while (box.children.length > 25) box.removeChild(box.firstChild);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        // ---- silent command send (no confirms, no dialogs) ----
+        async function scheduledSend(action, groupId) {
+            let dbUrl = document.getElementById("dbUrl").value.trim();
+            const team = document.getElementById("teamName").value;
+            if (!team) { scheduleLog('No team selected — skip', 'err'); return false; }
+            if (!isTeamUnlocked(team)) { scheduleLog(`Team "${team}" locked — skip`, 'err'); return false; }
+            if (!dbUrl) { scheduleLog('Server URL empty — skip', 'err'); return false; }
+            if (dbUrl.endsWith("/")) dbUrl = dbUrl.slice(0, -1);
+
+            const isStopAll = action === 'stop_all';
+            if (!isStopAll && !groupId) { scheduleLog('Missing groupId — skip', 'err'); return false; }
+
+            const scopeMode  = getWorkerScope(team);
+            const allWorkers = TEAMS_DATA[team] || [];
+            const teamWorkers = (scopeMode === 'selected')
+                ? allWorkers.filter(w => getSelectedWorkers(team).has(w.workerId))
+                : allWorkers;
+            if (teamWorkers.length === 0) {
+                scheduleLog(`No targets (scope=${scopeMode}) — skip`, 'err');
+                return false;
+            }
+
+            const payload = {
+                action: action,
+                time: Date.now(),
+                team: team,
+                workers: teamWorkers,
+                workerCount: teamWorkers.length,
+                scope: scopeMode,
+                workerIds: teamWorkers.map(w => w.workerId)
+            };
+            if (isStopAll) {
+                payload.groupId = null;
+                payload.stopAll = true;
+            } else {
+                payload.groupId = groupId;
+            }
+
+            try {
+                const res = await fetch(`${dbUrl}/teams/${team}.json`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                await res.json();
+                return true;
+            } catch (err) {
+                scheduleLog(`Send "${action}" failed: ${err.message}`, 'err');
+                return false;
+            }
+        }
+
+        // ---- main scheduler tick ----
+        async function tickScheduler() {
+            // Always update the clock display
+            const clock = document.getElementById('scheduleClock');
+            if (clock) clock.textContent = getBstClockString();
+
+            if (!loadScheduleMaster()) return;
+
+            const state  = loadScheduleState();
+            const snaps  = loadSnapshots();
+            const nowMin = getBstMinutes();
+
+            for (const w of SCHEDULE_WINDOWS) {
+                const inWindow   = (nowMin >= w.startMin && nowMin < w.endMin);
+                const wasRunning = state[w.id] === 'running';
+
+                // Transition: idle → running (window just started)
+                //   1. snapshot current #hitId
+                //   2. STOP ALL HITS
+                //   3. 5 second wait
+                //   4. START NYT Data Science HIT
+                if (inWindow && !wasRunning) {
+                    const current = document.getElementById('hitId').value.trim();
+                    snaps[w.id]   = current;
+                    saveSnapshots(snaps);
+
+                    // Mark RUNNING immediately so the next tick won't re-fire
+                    state[w.id] = 'running';
+                    saveScheduleState(state);
+                    renderScheduleWindows();
+
+                    scheduleLog(`${w.label} — START sequence: STOP ALL HITS first`, 'warn');
+                    await scheduledSend('stop_all');
+                    scheduleLog(`Waiting ${RESTORE_DELAY_MS / 1000}s before START NYT HIT...`, 'warn');
+
+                    setTimeout(async () => {
+                        const ok = await scheduledSend('start', SCHEDULED_GROUP_ID);
+                        if (ok) {
+                            scheduleLog(`START NYT Data Science HIT`, 'ok');
+                            const hitInput = document.getElementById('hitId');
+                            if (hitInput && !hitInput.readOnly) {
+                                hitInput.value = SCHEDULED_GROUP_ID;
+                                saveFormState();
+                            }
+                        }
+                        renderScheduleWindows();
+                    }, RESTORE_DELAY_MS);
+                }
+
+                // Transition: running → idle (window just ended)
+                //   1. STOP ALL HITS
+                //   2. 5 second wait
+                //   3. START the HIT that was running before window started
+                if (!inWindow && wasRunning) {
+                    const prev = snaps[w.id] || '';
+                    state[w.id] = 'idle';
+                    saveScheduleState(state);
+                    renderScheduleWindows();
+
+                    scheduleLog(`${w.label} — END: STOP ALL HITS`, 'warn');
+                    await scheduledSend('stop_all');
+
+                    if (prev) {
+                        scheduleLog(`Waiting ${RESTORE_DELAY_MS / 1000}s before START previous HIT...`, 'warn');
+                        setTimeout(async () => {
+                            const ok = await scheduledSend('start', prev);
+                            if (ok) {
+                                scheduleLog(`START previous HIT (${prev.substring(0, 12)}...)`, 'ok');
+                                const hitInput = document.getElementById('hitId');
+                                if (hitInput && !hitInput.readOnly) {
+                                    hitInput.value = prev;
+                                    saveFormState();
+                                }
+                            }
+                            renderScheduleWindows();
+                        }, RESTORE_DELAY_MS);
+                    } else {
+                        scheduleLog('No previous HIT snapshot — nothing to restore', 'warn');
+                    }
+                }
+            }
+        }
+
+        function startScheduler() {
+            tickScheduler();                          // immediate first run
+            setInterval(tickScheduler, 15 * 1000);    // every 15 seconds
+        }
+
+        // ============================================================
+        // INIT
+        // ============================================================
+        async function init() {
+            loadUnlockedTeams();   // 🔓 restore previous session unlocks
+            renderCustomPresets();
+
+            // First: try to show cached data immediately (so UI is functional offline)
+            const cached = lsGet(STORAGE_KEYS.cachedTeamsData, null);
+            if (cached) {
+                TEAMS_DATA = cached;
+                populateTeamDropdown();
+                updateTeamBadge();
+                renderWorkersPanel();
+                updateScopeUI();
+                updateSyncInfo();
+            }
+
+            // Restore form state (team, preset, hitId) from previous session
+            restoreFormState();
+            wireFormStatePersistence();
+
+            // Wire up scheduler UI + start ticker
+            restoreScheduleUi();
+            startScheduler();
+
+            // Then fetch fresh data from Sheet
+            await refreshTeamsData();
+            // After fresh data arrives, attempt form-state restore again
+            // (in case cached data didn't have the team yet)
+            restoreFormState();
+        }
+
+        init();
+    </script>
+</body>
+</html>

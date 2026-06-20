@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0e1a">
+<title>MTurk Control Center</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif;
+  background:#070b14;color:#e2e8f0;
+  height:100vh;height:100dvh;
+  display:flex;flex-direction:column;overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ── TOP BAR ── */
+.topbar{
+  flex-shrink:0;display:flex;align-items:center;gap:14px;
+  padding:10px 16px;
+  background:rgba(10,14,26,.86);
+  backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);
+  border-bottom:1px solid rgba(148,163,184,.12);
+  box-shadow:0 6px 28px rgba(0,0,0,.35);
+  z-index:10;
+}
+.brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:15px;letter-spacing:-.3px;white-space:nowrap}
+.brand .ic{font-size:20px;filter:drop-shadow(0 2px 6px rgba(34,211,238,.4))}
+.brand .grad{
+  background:linear-gradient(135deg,#22d3ee 0%,#a855f7 100%);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+}
+
+/* ── SEGMENTED TABS (2 buttons side by side) ── */
+.tabs{
+  position:relative;display:flex;gap:4px;
+  background:rgba(15,23,42,.72);
+  border:1px solid rgba(148,163,184,.14);
+  border-radius:14px;padding:4px;
+}
+.tab{
+  position:relative;z-index:1;
+  display:flex;align-items:center;gap:8px;
+  padding:9px 18px;border:none;cursor:pointer;
+  background:transparent;color:#94a3b8;
+  font-family:inherit;font-weight:700;font-size:13px;
+  border-radius:10px;transition:color .25s;white-space:nowrap;
+}
+.tab .em{font-size:15px;line-height:1}
+.tab:hover{color:#cbd5e1}
+.tab.active{color:#fff}
+.tab-ind{
+  position:absolute;top:4px;bottom:4px;left:4px;width:0;
+  border-radius:10px;
+  background:linear-gradient(135deg,#0891b2 0%,#7c3aed 100%);
+  box-shadow:0 4px 16px rgba(124,58,237,.45),0 1px 0 rgba(255,255,255,.08) inset;
+  transition:left .28s cubic-bezier(.4,0,.2,1),width .28s cubic-bezier(.4,0,.2,1);
+  z-index:0;
+}
+
+.spacer{margin-left:auto}
+.ext{
+  color:#64748b;font-size:11px;font-weight:600;font-family:ui-monospace,monospace;
+  text-decoration:none;padding:7px 11px;
+  border:1px solid rgba(148,163,184,.12);border-radius:9px;transition:.2s;white-space:nowrap;
+}
+.ext:hover{color:#22d3ee;border-color:rgba(34,211,238,.3);background:rgba(34,211,238,.06)}
+
+/* ── FRAMES ── */
+.frames{flex:1;position:relative;min-height:0;background:#070b14}
+.frames iframe{
+  position:absolute;inset:0;width:100%;height:100%;border:0;
+  opacity:0;visibility:hidden;transition:opacity .18s ease;
+}
+.frames iframe.show{opacity:1;visibility:visible;z-index:2}
+
+/* ── BOOT OVERLAY ── */
+.boot{
+  position:absolute;inset:0;z-index:5;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+  background:#070b14;color:#64748b;
+  font-family:ui-monospace,monospace;font-size:12px;
+  transition:opacity .3s ease;
+}
+.boot.hide{opacity:0;pointer-events:none}
+.boot .ring{
+  width:34px;height:34px;border-radius:50%;
+  border:3px solid rgba(148,163,184,.18);border-top-color:#22d3ee;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media(max-width:560px){
+  .topbar{padding:9px 12px;gap:10px}
+  .brand .txt{display:none}
+  .tab{padding:9px 13px;font-size:12px}
+  .ext{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="ic">🎛️</span><span class="txt grad">Control Center</span></div>
+
+  <div class="tabs" id="tabs">
+    <span class="tab-ind" id="ind"></span>
+    <button class="tab active" type="button" data-target="dash"><span class="em">📡</span><span>HIT Tracker</span></button>
+    <button class="tab" type="button" data-target="panda"><span class="em">🐼</span><span>Panda Commander</span></button>
+  </div>
+
+  <a class="ext spacer" id="openExt" href="/dashboard.html" target="_blank" rel="noopener" title="Open the current view in a new browser tab">↗ New tab</a>
+</div>
+
+<div class="frames">
+  <div class="boot" id="boot"><div class="ring"></div><div>Loading…</div></div>
+  <iframe id="frame-dash"  data-src="/dashboard.html"        title="MTurk HIT Tracker"></iframe>
+  <iframe id="frame-panda" data-src="/panda_commander.html"  title="Panda Commander"></iframe>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var tabs   = Array.prototype.slice.call(document.querySelectorAll(".tab"));
+  var ind    = document.getElementById("ind");
+  var boot   = document.getElementById("boot");
+  var openEx = document.getElementById("openExt");
+  var frames = { dash: document.getElementById("frame-dash"), panda: document.getElementById("frame-panda") };
+  var paths  = { dash: "/dashboard.html", panda: "/panda_commander.html" };
+  var loaded = {};
+
+  /* localStorage may be blocked (private mode) — fail soft */
+  function lsGet(k){ try { return localStorage.getItem(k); } catch (_) { return null; } }
+  function lsSet(k,v){ try { localStorage.setItem(k,v); } catch (_) {} }
+
+  var current = lsGet("cc_tab");
+  if (current !== "dash" && current !== "panda") current = "dash";
+
+  function ensureLoaded(key){
+    if (loaded[key]) return;
+    loaded[key] = true;
+    var f = frames[key];
+    f.addEventListener("load", function(){ if (key === current) hideBoot(); });
+    f.src = f.dataset.src;
+  }
+  function hideBoot(){ boot.classList.add("hide"); }
+
+  function moveInd(){
+    var btn = null;
+    for (var i = 0; i < tabs.length; i++) if (tabs[i].dataset.target === current) btn = tabs[i];
+    if (!btn) return;
+    ind.style.left  = btn.offsetLeft + "px";
+    ind.style.width = btn.offsetWidth + "px";
+  }
+
+  function activate(key, save){
+    if (!frames[key]) key = "dash";
+    current = key;
+    for (var i = 0; i < tabs.length; i++)
+      tabs[i].classList.toggle("active", tabs[i].dataset.target === key);
+    for (var k in frames)
+      if (frames.hasOwnProperty(k)) frames[k].classList.toggle("show", k === key);
+    ensureLoaded(key);
+    if (loaded[key] && frames[key].contentDocument && frames[key].contentDocument.readyState === "complete") hideBoot();
+    moveInd();
+    openEx.setAttribute("href", paths[key]);
+    if (save !== false) lsSet("cc_tab", key);
+  }
+
+  tabs.forEach(function(t){ t.addEventListener("click", function(){ activate(t.dataset.target); }); });
+  window.addEventListener("resize", moveInd);
+  window.addEventListener("load", moveInd);
+
+  /* Initial: show + load the chosen tab now; preload the other shortly after
+     so switching is instant and BOTH apps stay live in the background. */
+  activate(current, false);
+  setTimeout(function(){ for (var k in frames) if (frames.hasOwnProperty(k)) ensureLoaded(k); }, 1500);
+
+  /* Safety: never let the boot overlay get stuck */
+  setTimeout(hideBoot, 8000);
+})();
+</script>
+</body>
+</html>

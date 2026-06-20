@@ -95,11 +95,13 @@ app.set('trust proxy', true);
 // JSON parser with bigger limit (worker arrays + bulk HIT migration can be large)
 app.use(express.json({ limit: '25mb' }));
 
-// Serve static files (panda_commander.html) from the same folder as server.js
+// Serve static files from the same folder as server.js
 // This solves the Mixed Content issue: HTML and API live on the same HTTP origin.
-// NOTE: dashboard.html is served the same way → open it at /dashboard.html
+//   /                    → index.html  (Control Center: HIT Tracker + Panda Commander tabs)
+//   /dashboard.html      → the HIT dashboard
+//   /panda_commander.html→ the Panda Commander UI
 app.use(express.static(__dirname, {
-    index: 'panda_commander.html',   // Open the commander UI when visiting "/"
+    index: 'index.html',             // Open the combined Control Center when visiting "/"
     extensions: ['html']
 }));
 

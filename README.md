@@ -11,7 +11,9 @@ One server powers **both**:
 | File | What it is | Where it runs |
 |------|------------|---------------|
 | `server.js` | **The combined Panda Commander + HIT Monitor server.** Stores all team state **and** all HIT history in `data/state.json`, and streams live updates. | Your server (`38.58.179.188`) |
-| `dashboard.html` | The live + history HIT dashboard UI. Reads everything from the server. | Any browser, at `/dashboard.html` |
+| `index.html` | **Control Center** — the unified entry page served at `/`. Two side-by-side tabs (📡 HIT Tracker / 🐼 Panda Commander) that show each app in its own isolated frame. | Any browser, at `/` |
+| `dashboard.html` | The live + history HIT dashboard UI. Reads everything from the server. | In a tab, or directly at `/dashboard.html` |
+| `panda_commander.html` | The Panda Commander control UI. | In a tab, or directly at `/panda_commander.html` |
 | `Hit_Monitor.user.js` | Tampermonkey userscript that detects HITs on `worker.mturk.com` and reports them to the server. | Each worker's browser |
 
 > ⚠️ **Do NOT replace `server.js` with a HIT-only server** — it must keep the
@@ -19,8 +21,9 @@ One server powers **both**:
 > repo already contains the full Panda Commander code **plus** the upgraded HIT
 > tracking, so it is a safe drop-in for your existing `server.js`.
 >
-> Keep `panda_commander.html`, `dashboard.html` and the `data/` folder next to
-> `server.js`. Your existing `data/state.json` (teams **and** hits) is reused as-is.
+> Keep `index.html`, `panda_commander.html`, `dashboard.html` and the `data/`
+> folder next to `server.js`. Your existing `data/state.json` (teams **and**
+> hits) is reused as-is.
 
 ## Run the server
 
@@ -31,8 +34,13 @@ npm install express cors        # only if not already installed
 node server.js
 ```
 
-- Panda Commander UI → **http://YOUR_SERVER_IP:3000/**
-- HIT dashboard      → **http://YOUR_SERVER_IP:3000/dashboard.html**
+- **Control Center (both apps)** → **http://YOUR_SERVER_IP:3000/**
+- HIT dashboard only → http://YOUR_SERVER_IP:3000/dashboard.html
+- Panda Commander only → http://YOUR_SERVER_IP:3000/panda_commander.html
+
+The Control Center loads both apps in isolated frames (so their styles/scripts
+never collide), keeps both live in the background, and remembers the last tab
+you used.
 
 Keep it running after logout:
 
