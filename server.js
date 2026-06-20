@@ -1,272 +1,441 @@
-#!/usr/bin/env node
-"use strict";
-/* ============================================================================
-   MTurk HIT Tracker — Server (Panda Commander, persistent edition)
-   ----------------------------------------------------------------------------
-   A tiny dependency-free Node server that is the SINGLE SOURCE OF TRUTH for
-   every HIT. Because all data lives here (not in each browser), every device
-   — PC, phone, any browser — shows the exact same, complete history.
+// ========================================================
+//  PANDA COMMANDER — LOCAL FIREBASE REPLACEMENT SERVER
+//  Runs on Windows server, mimics Firebase REST API shape
+//  so existing HTML + RDP scripts work with minimal changes.
+//
+//  ★ This single file powers BOTH:
+//      1) Panda Commander  (/teams, /whoami, /workers …)  ← unchanged
+//      2) HIT Monitor      (/hits …)                      ← upgraded
+//    Do NOT replace it with a hits-only server, or Panda Commander breaks.
+// ========================================================
+//
+//  Endpoints:
+//    GET  /teams/:team.json        → returns latest command for that team
+//    PUT  /teams/:team.json        → set the latest command for that team
+//    GET  /teams.json              → debug: see all teams' state
+//    GET  /health                  → health check
+//
+//  Data is stored in ./data/state.json so commands survive restarts.
+// ========================================================
 
-   Run:   node server.js
-          PORT=3000 HOST=0.0.0.0 DATA_DIR=/var/lib/mturk node server.js
+const express = require('express');
+const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+const zlib = require('zlib');                       // built-in — for gzipping /hits.json
 
-   Endpoints (unchanged contract — drop-in for the old server):
-     GET  /                      → dashboard.html
-     GET  /dashboard.html        → dashboard.html
-     GET  /hits.json?limit&since → full history (or delta) as JSON  (gzip)
-     GET  /hits/stream           → Server-Sent Events live feed
-     GET  /hits/count            → { count }
-     GET  /health                → { ok, hits, clients }
-     POST /hits/:id              → upsert one HIT (partial body, merged)
-     POST /hits/bulk             → upsert many (array) — used for migration
-     DELETE /hits/:id            → remove a HIT
-     POST /hits/clear            → wipe all (admin)
+const PORT = 3000;                                  // Change here if needed
+const DATA_DIR = path.join(__dirname, 'data');
+const DATA_FILE = path.join(DATA_DIR, 'state.json');
 
-   Data is kept in memory and mirrored to DATA_DIR/hits-data.json atomically.
-============================================================================ */
+// ============================================================
+// Storage (simple JSON file, atomic write)
+// ============================================================
+let state = { teams: {}, hits: {} };
 
-const http = require("http");
-const fs   = require("fs");
-const path = require("path");
-const zlib = require("zlib");
-const { URL } = require("url");
-
-const PORT        = parseInt(process.env.PORT || "3000", 10);
-const HOST        = process.env.HOST || "0.0.0.0";
-const DATA_DIR    = process.env.DATA_DIR || __dirname;
-const DATA_FILE   = path.join(DATA_DIR, "hits-data.json");
-const DASH_FILE   = path.join(__dirname, "dashboard.html");
-const MAX_RECORDS = parseInt(process.env.MAX_RECORDS || "200000", 10);
-
-/* Status precedence — once a HIT reaches a more "final" state it can never be
-   downgraded by a later (possibly stale) write. This is what guarantees a real
-   Submitted is never overwritten by a wrong Expired/Active guess from any
-   client, even during the one-time local→server migration. */
-const STATUS_RANK = { active: 0, expired: 1, timed_out: 1, auto_returned: 2, manual_returned: 3, submitted: 3 };
-
-/* ── In-memory store (source of truth) ── */
-const hits = new Map();   // id → record
-
-function ts(v) { const t = v ? Date.parse(v) : 0; return isNaN(t) ? 0 : t; }
-
-function loadData() {
-  try {
-    if (!fs.existsSync(DATA_FILE)) { console.log("[store] no data file yet — starting empty"); return; }
-    const arr = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-    if (Array.isArray(arr)) for (const r of arr) { if (r && r.id != null) hits.set(String(r.id), r); }
-    console.log(`[store] loaded ${hits.size} hits from ${DATA_FILE}`);
-  } catch (e) {
-    console.error("[store] load failed:", e.message, "— keeping a backup and starting empty");
-    try { fs.renameSync(DATA_FILE, DATA_FILE + ".corrupt-" + Date.now()); } catch (_) {}
-  }
+function ensureDataDir() {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-/* ── Debounced atomic save (write tmp + rename) ── */
-let saveTimer = null, saving = false, dirtyAgain = false;
-function scheduleSave() { if (!saveTimer) saveTimer = setTimeout(flushSave, 1500); }
-function flushSave() {
-  saveTimer = null;
-  if (saving) { dirtyAgain = true; return; }
-  saving = true;
-  const tmp = DATA_FILE + ".tmp";
-  const json = JSON.stringify(Array.from(hits.values()));
-  fs.writeFile(tmp, json, err => {
-    if (err) { console.error("[store] write failed:", err.message); saving = false; return; }
-    fs.rename(tmp, DATA_FILE, err2 => {
-      saving = false;
-      if (err2) console.error("[store] rename failed:", err2.message);
-      if (dirtyAgain) { dirtyAgain = false; scheduleSave(); }
-    });
-  });
-}
-function saveSync() {
-  try {
-    fs.writeFileSync(DATA_FILE + ".tmp", JSON.stringify(Array.from(hits.values())));
-    fs.renameSync(DATA_FILE + ".tmp", DATA_FILE);
-  } catch (e) { console.error("[store] sync save failed:", e.message); }
-}
-
-/* ── Precedence-guarded merge (never downgrade a terminal status, never wipe
-   a known field with null/undefined) ── */
-function mergeRecord(id, incoming) {
-  const existing = hits.get(id) || null;
-  const out = existing ? Object.assign({}, existing) : {};
-  for (const k in incoming) {
-    if (!Object.prototype.hasOwnProperty.call(incoming, k)) continue;
-    if (k === "status" || k === "id") continue;
-    const v = incoming[k];
-    if (v === null || v === undefined) continue;
-    out[k] = v;
-  }
-  out.id = id;
-
-  const inStatus = incoming.status;
-  if (inStatus) {
-    const cur     = out.status;
-    const curRank = (cur in STATUS_RANK) ? STATUS_RANK[cur] : -1;
-    const inRank  = (inStatus in STATUS_RANK) ? STATUS_RANK[inStatus] : -1;
-    if (!cur || inRank > curRank) out.status = inStatus;   // upgrade only
-  } else if (!out.status) {
-    out.status = "active";
-  }
-
-  if (!out.acceptedAt) out.acceptedAt = out.lastSyncAt || new Date().toISOString();
-  out.updatedAt = new Date().toISOString();
-  hits.set(id, out);
-  return out;
+function loadState() {
+    try {
+        ensureDataDir();
+        if (fs.existsSync(DATA_FILE)) {
+            const raw = fs.readFileSync(DATA_FILE, 'utf-8');
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') state = parsed;
+            if (!state.teams) state.teams = {};
+            if (!state.hits) state.hits = {};
+            // Backfill `updatedAt` (ISO) for older HIT records that only have the
+            // numeric `lastUpdatedAt`, so the dashboard's ?since= delta sync is
+            // consistent for data that existed before this upgrade.
+            for (const id in state.hits) {
+                const h = state.hits[id];
+                if (h && !h.updatedAt) {
+                    h.updatedAt = new Date(h.lastUpdatedAt || Date.now()).toISOString();
+                }
+            }
+        }
+    } catch (e) {
+        console.error('[STORAGE] Failed to load state:', e.message);
+        state = { teams: {}, hits: {} };
+    }
 }
 
-function pruneIfNeeded() {
-  if (hits.size <= MAX_RECORDS) return;
-  const arr = Array.from(hits.values()).sort((a, b) => ts(a.acceptedAt) - ts(b.acceptedAt));
-  const removeN = hits.size - MAX_RECORDS;
-  for (let i = 0; i < removeN; i++) hits.delete(String(arr[i].id));
+let saveTimer = null;
+function saveState() {
+    // Debounce writes (in case many PUTs hit at once)
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+        try {
+            ensureDataDir();
+            const tmp = DATA_FILE + '.tmp';
+            fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
+            fs.renameSync(tmp, DATA_FILE);
+        } catch (e) {
+            console.error('[STORAGE] Save failed:', e.message);
+        }
+    }, 100);
 }
 
-/* ── SSE clients ── */
-const clients = new Set();
-function broadcast(event, data) {
-  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  for (const res of clients) { try { res.write(payload); } catch (_) {} }
-}
+loadState();
 
-/* ── HTTP helpers ── */
-function send(res, code, body, headers) {
-  res.writeHead(code, Object.assign({ "Access-Control-Allow-Origin": "*" }, headers || {}));
-  res.end(body);
-}
-function sendJSON(res, code, obj, req) {
-  const json = JSON.stringify(obj);
-  const ae = (req && req.headers["accept-encoding"]) || "";
-  if (/\bgzip\b/.test(ae) && json.length > 1024) {
-    zlib.gzip(json, (e, buf) => {
-      if (e) return send(res, code, json, { "Content-Type": "application/json" });
-      send(res, code, buf, { "Content-Type": "application/json", "Content-Encoding": "gzip" });
-    });
-  } else {
-    send(res, code, json, { "Content-Type": "application/json" });
-  }
-}
-function readBody(req, cb) {
-  let data = "", tooBig = false;
-  req.on("data", c => { data += c; if (data.length > 25 * 1024 * 1024) { tooBig = true; req.destroy(); } });
-  req.on("end", () => cb(tooBig ? new Error("body too large") : null, data));
-  req.on("error", e => cb(e));
-}
+// ============================================================
+// Server
+// ============================================================
+const app = express();
 
-/* ── Router ── */
-const server = http.createServer((req, res) => {
-  let u;
-  try { u = new URL(req.url, `http://${req.headers.host || "localhost"}`); }
-  catch (_) { return send(res, 400, "bad url"); }
-  const p = u.pathname, method = req.method;
+// CORS — allow any origin (so HTML can be opened from file://, GitHub Pages, etc.)
+app.use(cors({ origin: true, credentials: false }));
 
-  if (method === "OPTIONS") {
-    return send(res, 204, "", {
-      "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400"
-    });
-  }
+// Trust the first hop so req.ip reflects the original RDP IP when the
+// server sits behind a reverse proxy / load balancer in the future.
+app.set('trust proxy', true);
 
-  /* SSE live stream */
-  if (method === "GET" && p === "/hits/stream") {
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
-      "X-Accel-Buffering": "no"
-    });
-    res.write("retry: 3000\n");
-    res.write("event: ready\ndata: {}\n\n");
-    clients.add(res);
-    const ka = setInterval(() => { try { res.write(":keep-alive\n\n"); } catch (_) {} }, 25000);
-    req.on("close", () => { clearInterval(ka); clients.delete(res); });
-    return;
-  }
+// JSON parser with bigger limit (worker arrays + bulk HIT migration can be large)
+app.use(express.json({ limit: '25mb' }));
 
-  /* Full history / delta */
-  if (method === "GET" && p === "/hits.json") {
-    const limit = parseInt(u.searchParams.get("limit") || "0", 10);
-    const since = u.searchParams.get("since");
-    let arr = Array.from(hits.values());
-    if (since) { const s = ts(since); arr = arr.filter(h => ts(h.updatedAt) > s); }
-    arr.sort((a, b) => ts(b.acceptedAt) - ts(a.acceptedAt));
-    if (limit > 0 && arr.length > limit) arr = arr.slice(0, limit);
-    return sendJSON(res, 200, arr, req);
-  }
+// Serve static files (panda_commander.html) from the same folder as server.js
+// This solves the Mixed Content issue: HTML and API live on the same HTTP origin.
+// NOTE: dashboard.html is served the same way → open it at /dashboard.html
+app.use(express.static(__dirname, {
+    index: 'panda_commander.html',   // Open the commander UI when visiting "/"
+    extensions: ['html']
+}));
 
-  if (method === "GET" && p === "/hits/count")
-    return sendJSON(res, 200, { count: hits.size }, req);
-
-  if (method === "GET" && p === "/health")
-    return sendJSON(res, 200, { ok: true, hits: hits.size, clients: clients.size }, req);
-
-  /* Bulk upsert (migration: local browser memory → server) */
-  if (method === "POST" && (p === "/hits/bulk" || p === "/hits")) {
-    return readBody(req, (err, body) => {
-      if (err) return send(res, 413, "too large");
-      let parsed; try { parsed = JSON.parse(body || "[]"); } catch (_) { return send(res, 400, "bad json"); }
-      const list = Array.isArray(parsed) ? parsed
-                 : (parsed && Array.isArray(parsed.hits) ? parsed.hits : null);
-      if (!list) return send(res, 400, "expected array");
-      let n = 0;
-      for (const item of list) {
-        const id = item && (item.id || item.assignmentId);
-        if (!id) continue;
-        broadcast("hit-update", mergeRecord(String(id), item));
-        n++;
-      }
-      pruneIfNeeded(); scheduleSave();
-      return sendJSON(res, 200, { ok: true, upserted: n, total: hits.size }, req);
-    });
-  }
-
-  /* Single upsert */
-  let m;
-  if (method === "POST" && (m = p.match(/^\/hits\/([^/]+)$/))) {
-    const id = decodeURIComponent(m[1]);
-    return readBody(req, (err, body) => {
-      if (err) return send(res, 413, "too large");
-      let data; try { data = JSON.parse(body || "{}"); } catch (_) { return send(res, 400, "bad json"); }
-      if (!data || typeof data !== "object") return send(res, 400, "bad body");
-      const merged = mergeRecord(String(id), data);
-      pruneIfNeeded(); scheduleSave();
-      broadcast("hit-update", merged);
-      return sendJSON(res, 200, merged, req);
-    });
-  }
-
-  /* Delete */
-  if (method === "DELETE" && (m = p.match(/^\/hits\/([^/]+)$/))) {
-    const id = decodeURIComponent(m[1]);
-    if (hits.delete(String(id))) { scheduleSave(); broadcast("hit-delete", { id }); }
-    return sendJSON(res, 200, { ok: true }, req);
-  }
-
-  /* Clear (admin) */
-  if (method === "POST" && p === "/hits/clear") {
-    hits.clear(); scheduleSave(); broadcast("hit-clear", {});
-    return sendJSON(res, 200, { ok: true }, req);
-  }
-
-  /* Dashboard */
-  if (method === "GET" && (p === "/" || p === "/dashboard.html" || p === "/dashboard")) {
-    return fs.readFile(DASH_FILE, (e, buf) => {
-      if (e) return send(res, 404, "dashboard.html not found next to server.js");
-      send(res, 200, buf, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
-    });
-  }
-
-  send(res, 404, "not found");
+// Friendly request log (so you can see commands flowing in real time)
+app.use((req, res, next) => {
+    const ts = new Date().toLocaleTimeString();
+    if (req.url !== '/health') {
+        console.log(`[${ts}] ${req.method} ${req.url}`);
+    }
+    next();
 });
 
-loadData();
-server.listen(PORT, HOST, () =>
-  console.log(`MTurk HIT Tracker server → http://${HOST}:${PORT}  (${hits.size} hits loaded, dashboard at /)`));
+// ----- Health -----
+app.get('/health', (req, res) => {
+    res.json({
+        ok: true,
+        teams: Object.keys(state.teams),
+        hits: Object.keys(state.hits).length,
+        uptime: process.uptime()
+    });
+});
 
-function shutdown() { saveSync(); process.exit(0); }
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
-process.on("uncaughtException", e => console.error("[uncaught]", e));
+// ----- Read all (debug) -----
+app.get('/teams.json', (req, res) => {
+    res.json(state.teams);
+});
+
+// ----- Whoami: given a Worker ID, return which team it belongs to -----
+// RDP scripts call this on startup to figure out which team's path to listen on.
+// Data source: the workers list each team posted via PUT /teams/<team>.json
+app.get('/whoami', (req, res) => {
+    const workerId = (req.query.workerId || '').trim();
+    if (!workerId) {
+        return res.status(400).json({ error: 'workerId query parameter required' });
+    }
+    for (const [team, cmd] of Object.entries(state.teams)) {
+        if (cmd && Array.isArray(cmd.workers)) {
+            const found = cmd.workers.find(w => w && w.workerId === workerId);
+            if (found) {
+                return res.json({ workerId, team, found: true });
+            }
+        }
+    }
+    res.json({ workerId, team: null, found: false });
+});
+
+// ----- Read worker → team mapping (for RDP auto-detect) -----
+// Builds a map: { workerId: teamName } from the latest workers list each team posted.
+app.get('/workers.json', (req, res) => {
+    const map = {};
+    for (const [team, cmd] of Object.entries(state.teams)) {
+        if (cmd && Array.isArray(cmd.workers)) {
+            for (const w of cmd.workers) {
+                if (w && w.workerId) map[w.workerId] = team;
+            }
+        }
+    }
+    res.json(map);
+});
+
+// ----- Read one team's latest command -----
+// Path matches Firebase shape: /teams/Mehedi.json
+//
+// Per-worker filter: the RDP MUST append ?workerId=XXX (its MTurk worker
+// ID). When the stored command has scope='selected' with a workerIds
+// allow-list, this endpoint returns null for workers NOT in the list.
+// IP-based identification is NOT used — same public IP can belong to
+// different workerIds across teams (residential proxy pools), so only
+// the worker's own MTurk ID can identify it reliably.
+app.get('/teams/:team.json', (req, res) => {
+    const team = req.params.team;
+    const cmd  = state.teams[team] || null;
+    if (!cmd) return res.json(null);
+
+    const workerId = (req.query.workerId || '').trim();
+
+    // "selected" scope = only the workerIds in the allow-list should act.
+    if (cmd.scope === 'selected' && Array.isArray(cmd.workerIds)) {
+        if (!workerId) {
+            // No workerId hint at all — we cannot tell who this is. To stay
+            // safe (do not blast a "selected" command to everyone), hide it.
+            return res.json(null);
+        }
+        if (!cmd.workerIds.includes(workerId)) {
+            return res.json(null);
+        }
+    }
+
+    res.json(cmd);
+});
+
+// ----- Write a team's command -----
+app.put('/teams/:team.json', (req, res) => {
+    const team = req.params.team;
+    const cmd = req.body;
+    if (!cmd || typeof cmd !== 'object') {
+        return res.status(400).json({ error: 'Body must be a JSON object' });
+    }
+    state.teams[team] = cmd;
+    saveState();
+
+    const action      = cmd.action || '?';
+    const groupId     = cmd.groupId || '(none)';
+    const workerCount = cmd.workerCount != null ? cmd.workerCount : '?';
+    const scopeTag    = cmd.scope === 'selected'
+        ? ` | scope: SELECTED (${Array.isArray(cmd.workerIds) ? cmd.workerIds.length : 0} allowed)`
+        : '';
+    console.log(`  → [${team}] ${action.toUpperCase()} | HIT: ${groupId} | RDPs: ${workerCount}${scopeTag}`);
+
+    // Echo back like Firebase does
+    res.json(cmd);
+});
+
+// ----- Optional: clear a team (admin nice-to-have) -----
+app.delete('/teams/:team.json', (req, res) => {
+    const team = req.params.team;
+    delete state.teams[team];
+    saveState();
+    res.json({ deleted: team });
+});
+
+// ============================================================
+// HIT MONITOR — Firebase Firestore replacement endpoints
+// ============================================================
+//
+//   POST  /hits/:assignmentId    → upsert (merge) HIT data (replaces Firestore PATCH)
+//   POST  /hits/bulk             → upsert many at once (dashboard memory → server migration)
+//   GET   /hits.json             → fetch HITs (full history, or ?since= delta; gzipped)
+//   GET   /hits/stream           → SSE: real-time push to connected dashboards
+//   DELETE /hits/:assignmentId   → remove a HIT (manual cleanup)
+//   DELETE /hits.json            → wipe all HIT data (admin reset)
+// ============================================================
+
+// Connected SSE clients (dashboards)
+const hitSubscribers = new Set();
+
+function broadcastHitUpdate(eventType, payload) {
+    const msg = `event: ${eventType}\ndata: ${JSON.stringify(payload)}\n\n`;
+    for (const res of hitSubscribers) {
+        try { res.write(msg); } catch (_) {}
+    }
+}
+
+// Status precedence — once a HIT reaches a more "final" state it can never be
+// downgraded by a later (possibly stale) write. THIS is what stops a HIT you
+// really submitted from being flipped back to Active/Expired by a delayed or
+// duplicated report, from the userscript OR from the dashboard's migration.
+const STATUS_RANK = { active: 0, expired: 1, timed_out: 1, auto_returned: 2, manual_returned: 3, submitted: 3 };
+
+function mergeHitRecord(id, incoming) {
+    const existing = state.hits[id] || {};
+    const out = { ...existing };
+    for (const k in incoming) {
+        if (!Object.prototype.hasOwnProperty.call(incoming, k)) continue;
+        if (k === 'status' || k === 'id') continue;
+        const v = incoming[k];
+        if (v === null || v === undefined) continue;   // never wipe a known field with null
+        out[k] = v;
+    }
+    out.id = id;
+
+    const inStatus = incoming.status;
+    if (inStatus) {
+        const cur     = out.status;
+        const curRank = (cur in STATUS_RANK) ? STATUS_RANK[cur] : -1;
+        const inRank  = (inStatus in STATUS_RANK) ? STATUS_RANK[inStatus] : -1;
+        if (!cur || inRank > curRank) out.status = inStatus;   // upgrade only, never downgrade
+    } else if (!out.status) {
+        out.status = 'active';
+    }
+
+    if (!out.acceptedAt) out.acceptedAt = out.lastSyncAt || new Date().toISOString();
+    const now = Date.now();
+    out.lastUpdatedAt = now;                          // numeric (kept for backward-compat)
+    out.updatedAt     = new Date(now).toISOString();  // ISO — used by the dashboard's ?since delta
+    state.hits[id] = out;
+    return out;
+}
+
+// --- Bulk upsert (dashboard one-time migration: browser memory → server) ---
+// MUST be declared BEFORE '/hits/:assignmentId', otherwise ":assignmentId"
+// would capture the literal path segment "bulk".
+app.post('/hits/bulk', (req, res) => {
+    const body = req.body;
+    const list = Array.isArray(body) ? body
+               : (body && Array.isArray(body.hits) ? body.hits : null);
+    if (!list) return res.status(400).json({ error: 'expected an array of hits' });
+
+    let n = 0;
+    for (const item of list) {
+        const id = item && (item.id || item.assignmentId);
+        if (!id) continue;
+        broadcastHitUpdate('hit-update', mergeHitRecord(String(id), item));
+        n++;
+    }
+    saveState();
+    res.json({ ok: true, upserted: n, total: Object.keys(state.hits).length });
+});
+
+// --- Upsert a HIT (replaces Firestore "set with merge") ---
+app.post('/hits/:assignmentId', (req, res) => {
+    const id = req.params.assignmentId;
+    if (!id) return res.status(400).json({ error: 'assignmentId required' });
+
+    const incoming = req.body || {};
+    if (typeof incoming !== 'object') {
+        return res.status(400).json({ error: 'Body must be a JSON object' });
+    }
+
+    const merged = mergeHitRecord(id, incoming);
+    saveState();
+
+    broadcastHitUpdate('hit-update', merged);
+    res.json(merged);
+});
+
+// --- Bulk read HITs ---
+//   • no params      → full history (every HIT ever recorded)
+//   • ?limit=N       → newest N only (kept for backward-compat)
+//   • ?since=<ISO>   → only HITs changed since that time (delta sync)
+//   Response is gzipped when the client supports it and the payload is large.
+app.get('/hits.json', (req, res) => {
+    const limit = parseInt(req.query.limit, 10) || 0;
+    const since = req.query.since ? Date.parse(req.query.since) : 0;
+
+    let arr = Object.values(state.hits);
+
+    if (since) {
+        arr = arr.filter(h => {
+            const t = h.updatedAt ? Date.parse(h.updatedAt) : (h.lastUpdatedAt || 0);
+            return t > since;
+        });
+    }
+
+    arr.sort((a, b) => {
+        const aT = a.acceptedAt ? new Date(a.acceptedAt).getTime() : 0;
+        const bT = b.acceptedAt ? new Date(b.acceptedAt).getTime() : 0;
+        return bT - aT;
+    });
+    if (limit > 0) arr = arr.slice(0, limit);
+
+    const json = JSON.stringify(arr);
+    const ae = req.headers['accept-encoding'] || '';
+    if (/\bgzip\b/.test(ae) && json.length > 1024) {
+        zlib.gzip(json, (err, buf) => {
+            if (err) return res.type('application/json').send(json);
+            res.set('Content-Encoding', 'gzip');
+            res.type('application/json').send(buf);
+        });
+    } else {
+        res.type('application/json').send(json);
+    }
+});
+
+// --- Count (lightweight) ---
+app.get('/hits/count', (req, res) => {
+    res.json({ count: Object.keys(state.hits).length });
+});
+
+// --- Real-time stream (replaces Firestore onSnapshot) ---
+app.get('/hits/stream', (req, res) => {
+    res.set({
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+    });
+    res.flushHeaders();
+
+    // Send a hello so the client knows the stream is alive
+    res.write(`event: ready\ndata: {"ok":true}\n\n`);
+
+    hitSubscribers.add(res);
+
+    // Heartbeat every 25s (proxies often kill idle connections at 30s)
+    const heartbeat = setInterval(() => {
+        try { res.write(`: heartbeat\n\n`); } catch (_) {}
+    }, 25000);
+
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        hitSubscribers.delete(res);
+    });
+});
+
+// --- Delete one HIT ---
+app.delete('/hits/:assignmentId', (req, res) => {
+    const id = req.params.assignmentId;
+    if (state.hits[id]) {
+        delete state.hits[id];
+        saveState();
+        broadcastHitUpdate('hit-delete', { id });
+    }
+    res.json({ deleted: id });
+});
+
+// --- Delete all HITs (admin nuke) ---
+app.delete('/hits.json', (req, res) => {
+    state.hits = {};
+    saveState();
+    broadcastHitUpdate('hit-clear', {});
+    res.json({ cleared: true });
+});
+
+// ----- 404 -----
+app.use((req, res) => {
+    res.status(404).json({ error: 'Not found', path: req.url });
+});
+
+// ============================================================
+// Boot
+// ============================================================
+app.listen(PORT, '0.0.0.0', () => {
+    console.log('');
+    console.log('  🐼 Panda Commander Server (+ HIT Monitor)');
+    console.log('  ─────────────────────────────────────────');
+    console.log(`  Listening on  http://0.0.0.0:${PORT}`);
+    console.log(`  Local URL     http://localhost:${PORT}`);
+    console.log(`  LAN/Public    http://<server-ip>:${PORT}`);
+    console.log(`  Dashboard     http://<server-ip>:${PORT}/dashboard.html`);
+    console.log(`  Data file     ${DATA_FILE}`);
+    console.log('');
+    console.log('  Loaded teams:', Object.keys(state.teams).length || '(none yet)',
+                '| hits:', Object.keys(state.hits).length);
+    console.log('');
+});
+
+// Graceful shutdown — flush any pending save
+function flushAndExit() {
+    console.log('\n  Shutting down — flushing state...');
+    if (saveTimer) clearTimeout(saveTimer);
+    try {
+        ensureDataDir();
+        fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2));
+    } catch (_) {}
+    process.exit(0);
+}
+process.on('SIGINT', flushAndExit);
+process.on('SIGTERM', flushAndExit);
