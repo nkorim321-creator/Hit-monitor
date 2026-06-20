@@ -33,31 +33,46 @@ body{
   -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
 }
 
-/* ── SEGMENTED TABS (2 buttons side by side) ── */
+/* ── SEGMENTED TABS (2 buttons side by side, frosted glass) ── */
 .tabs{
-  position:relative;display:flex;gap:4px;
-  background:rgba(15,23,42,.72);
-  border:1px solid rgba(148,163,184,.14);
-  border-radius:14px;padding:4px;
+  position:relative;display:flex;gap:5px;
+  background:linear-gradient(180deg,rgba(40,54,82,.5) 0%,rgba(15,23,42,.62) 100%);
+  backdrop-filter:blur(18px) saturate(150%);-webkit-backdrop-filter:blur(18px) saturate(150%);
+  border:1px solid rgba(148,163,184,.18);
+  border-radius:15px;padding:5px;
+  box-shadow:0 10px 28px rgba(0,0,0,.34),0 1px 0 rgba(255,255,255,.08) inset;
 }
 .tab{
   position:relative;z-index:1;
   display:flex;align-items:center;gap:8px;
-  padding:9px 18px;border:none;cursor:pointer;
-  background:transparent;color:#94a3b8;
+  padding:10px 20px;border:none;cursor:pointer;
+  background:transparent;color:#9fb0cd;
   font-family:inherit;font-weight:700;font-size:13px;
-  border-radius:10px;transition:color .25s;white-space:nowrap;
+  border-radius:11px;white-space:nowrap;
+  transition:color .25s,background .25s;
 }
 .tab .em{font-size:15px;line-height:1}
-.tab:hover{color:#cbd5e1}
-.tab.active{color:#fff}
+.tab:hover:not(.active){color:#dbe5f5;background:rgba(255,255,255,.05)}
+.tab.active{color:#fff;text-shadow:0 1px 8px rgba(0,0,0,.35)}
+
+/* sliding frosted-glass pill behind the active tab */
 .tab-ind{
-  position:absolute;top:4px;bottom:4px;left:4px;width:0;
-  border-radius:10px;
-  background:linear-gradient(135deg,#0891b2 0%,#7c3aed 100%);
-  box-shadow:0 4px 16px rgba(124,58,237,.45),0 1px 0 rgba(255,255,255,.08) inset;
-  transition:left .28s cubic-bezier(.4,0,.2,1),width .28s cubic-bezier(.4,0,.2,1);
+  position:absolute;top:5px;bottom:5px;left:5px;width:0;
+  border-radius:11px;overflow:hidden;
+  background:linear-gradient(135deg,rgba(8,145,178,.92) 0%,rgba(124,58,237,.92) 100%);
+  backdrop-filter:blur(6px) saturate(160%);-webkit-backdrop-filter:blur(6px) saturate(160%);
+  box-shadow:0 6px 22px rgba(124,58,237,.5),
+             0 0 0 1px rgba(255,255,255,.1) inset,
+             0 1px 0 rgba(255,255,255,.22) inset;
+  transition:left .3s cubic-bezier(.34,1.25,.4,1),width .3s cubic-bezier(.34,1.25,.4,1);
   z-index:0;
+}
+/* glossy top sheen for the glass look */
+.tab-ind::before{
+  content:"";position:absolute;left:0;right:0;top:0;height:50%;
+  background:linear-gradient(180deg,rgba(255,255,255,.28) 0%,rgba(255,255,255,0) 100%);
+  border-radius:11px 11px 40% 40%/11px 11px 22px 22px;
+  pointer-events:none;
 }
 
 .spacer{margin-left:auto}
