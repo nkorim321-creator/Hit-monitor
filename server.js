@@ -23,10 +23,25 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');                       // built-in — for gzipping /hits.json
+const crypto = require('crypto');                   // built-in — for the admin token
 
 const PORT = 3000;                                  // Change here if needed
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'state.json');
+
+// ── HIT dashboard access control ──────────────────────────────────────────
+// Master password. Reading HIT history (/hits.json, /hits/stream) and any
+// destructive HIT action (delete) require a token derived from it, so nobody
+// can see or delete the history without the password. Change it here if needed.
+// (Panda Commander has its own separate password system and is untouched.)
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Noushad99#$';
+const ADMIN_TOKEN = crypto.createHash('sha256').update(ADMIN_PASSWORD).digest('hex');
+function isAuthed(req) {
+    const t = String((req.query && req.query.token) || req.headers['x-admin-token'] || '');
+    if (t.length !== ADMIN_TOKEN.length) return false;
+    try { return crypto.timingSafeEqual(Buffer.from(t), Buffer.from(ADMIN_TOKEN)); }  // constant-time
+    catch (_) { return false; }
+}
 
 // ============================================================
 // Storage (simple JSON file, atomic write)
@@ -324,6 +339,7 @@ app.post('/hits/:assignmentId', (req, res) => {
 //   • ?since=<ISO>   → only HITs changed since that time (delta sync)
 //   Response is gzipped when the client supports it and the payload is large.
 app.get('/hits.json', (req, res) => {
+    if (!isAuthed(req)) return res.status(401).json({ error: 'unauthorized' });
     const limit = parseInt(req.query.limit, 10) || 0;
     const since = req.query.since ? Date.parse(req.query.since) : 0;
 
@@ -363,6 +379,7 @@ app.get('/hits/count', (req, res) => {
 
 // --- Real-time stream (replaces Firestore onSnapshot) ---
 app.get('/hits/stream', (req, res) => {
+    if (!isAuthed(req)) return res.status(401).json({ error: 'unauthorized' });
     res.set({
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache, no-transform',
@@ -387,8 +404,27 @@ app.get('/hits/stream', (req, res) => {
     });
 });
 
-// --- Delete one HIT ---
+// --- Delete an entire team's HITs (password-protected) ---
+// MUST be declared BEFORE '/hits/:assignmentId' so ":assignmentId" doesn't
+// swallow the literal "team" segment. Removes every HIT whose teamname matches.
+app.delete('/hits/team/:team', (req, res) => {
+    if (!isAuthed(req)) return res.status(401).json({ error: 'unauthorized' });
+    const team = decodeURIComponent(req.params.team);
+    const removed = [];
+    for (const id in state.hits) {
+        const tn = state.hits[id] && (state.hits[id].teamname || 'No Team');
+        if (tn === team) { removed.push(id); delete state.hits[id]; }
+    }
+    if (removed.length) {
+        saveState();
+        for (const id of removed) broadcastHitUpdate('hit-delete', { id });
+    }
+    res.json({ ok: true, team, deleted: removed.length });
+});
+
+// --- Delete one HIT (password-protected) ---
 app.delete('/hits/:assignmentId', (req, res) => {
+    if (!isAuthed(req)) return res.status(401).json({ error: 'unauthorized' });
     const id = req.params.assignmentId;
     if (state.hits[id]) {
         delete state.hits[id];
@@ -398,8 +434,9 @@ app.delete('/hits/:assignmentId', (req, res) => {
     res.json({ deleted: id });
 });
 
-// --- Delete all HITs (admin nuke) ---
+// --- Delete all HITs (password-protected admin nuke) ---
 app.delete('/hits.json', (req, res) => {
+    if (!isAuthed(req)) return res.status(401).json({ error: 'unauthorized' });
     state.hits = {};
     saveState();
     broadcastHitUpdate('hit-clear', {});

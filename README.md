@@ -59,30 +59,49 @@ pm2 save && pm2 startup
 ## How "same on every device" works
 
 1. The **server** holds every HIT and is the only source of truth.
-2. Each dashboard pulls the **full history** from the server on load, then stays
-   live over Server-Sent Events (SSE), with a 60s `?since=` delta poll as backup.
-3. The browser keeps a local IndexedDB copy **only** as an offline / instant-load
-   cache. The first time the upgraded dashboard loads, it uploads anything that
-   was previously stored only in that browser to the server (one-time migration
-   via `POST /hits/bulk`), so nothing is lost and all devices converge.
+2. On load each dashboard pulls the **full history** and **replaces** its view
+   with the server's data, then stays live over SSE with a 60s `?since=` delta
+   poll. Because the view is the server's data — not a per-browser pile-up — two
+   devices with the same filters always show the **same** result.
+3. The browser's IndexedDB copy is **only** an offline / instant-load cache. The
+   first time the upgraded dashboard loads it uploads any browser-only HITs to
+   the server (one-time migration via `POST /hits/bulk`) so nothing is lost.
 4. The server **never downgrades a status**: once a HIT is `submitted` /
-   `manual_returned`, a later stale `active` / `expired` write is ignored. This
-   is what stops HITs you really submitted from flipping to "Expired".
+   `manual_returned`, a later stale `active` / `expired` write is ignored — this
+   stops HITs you really submitted from flipping to "Expired".
+
+## Password & team delete
+
+- **The HIT dashboard is locked by a master password.** Without it, the history
+  can't be viewed or deleted — on any device. Reading (`/hits.json`,
+  `/hits/stream`) and deleting require a token derived from the password, so the
+  protection is enforced by the **server**, not just hidden in the page.
+- Change the password by editing `ADMIN_PASSWORD` in `server.js` (or setting the
+  `ADMIN_PASSWORD` env var) **and** the `EXPECTED_HASH` in `dashboard.html` to
+  its SHA-256. Current password: `Noushad99#$`.
+- **🗑 Delete Team** (in the dashboard toolbar) removes a whole team's HIT
+  history from the server for everyone — it asks for the master password and the
+  server re-checks it. **🔒 Lock** re-locks the dashboard.
+- HIT **writes stay open** (`POST /hits/:id`, `/hits/bulk`) so the userscript
+  keeps reporting without needing the password. Panda Commander keeps its own
+  separate password system.
 
 ## HIT endpoints (reference)
 
 ```
-POST   /hits/:assignmentId   → upsert one HIT (partial body, status-precedence merge)
-POST   /hits/bulk            → upsert many (browser→server migration)
-GET    /hits.json            → full history, ?limit=N, or ?since=<ISO> delta (gzip)
-GET    /hits/stream          → SSE live feed (ready, hit-update, hit-delete, hit-clear)
+POST   /hits/:assignmentId   → upsert one HIT (open; status-precedence merge)
+POST   /hits/bulk            → upsert many (open; browser→server migration)
+GET    /hits.json?token=…    → full history, ?limit=N, or ?since=<ISO> delta (gzip)   [token]
+GET    /hits/stream?token=…  → SSE live feed (ready, hit-update, hit-delete, hit-clear) [token]
 GET    /hits/count           → { count }
-DELETE /hits/:assignmentId   → remove a HIT
-DELETE /hits.json            → wipe all HITs (admin)
+DELETE /hits/team/:team?token=…  → delete a whole team's HITs   [token]
+DELETE /hits/:assignmentId?token=…   → remove a HIT             [token]
+DELETE /hits.json?token=…    → wipe all HITs                    [token]
 ```
 
+`[token]` = requires `?token=<sha256(password)>` (or `x-admin-token` header).
 Panda Commander endpoints (`/teams/:team.json`, `/whoami`, `/workers.json`,
-`/teams.json`, `/health`) are unchanged.
+`/teams.json`, `/health`) are unchanged and need no token.
 
 ## Dashboard views
 

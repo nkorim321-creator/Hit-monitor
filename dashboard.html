@@ -213,9 +213,77 @@ tbody td{padding:8px 13px;vertical-align:middle}
   .stats{grid-template-columns:repeat(2,1fr)}
   .cbar-right{margin-left:0;width:100%}
 }
+
+/* ── LOCK SCREEN ── */
+.lockScreen{
+  position:fixed;inset:0;z-index:1000;display:none;
+  align-items:center;justify-content:center;padding:24px;
+  background:radial-gradient(ellipse 60% 50% at 50% 28%,rgba(0,229,160,.06),transparent),rgba(3,5,10,.93);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+}
+.lockScreen.show{display:flex}
+.lockCard{
+  width:100%;max-width:340px;text-align:center;
+  background:var(--s0);border:1px solid var(--bd2);border-radius:16px;
+  padding:32px 26px;box-shadow:0 30px 80px rgba(0,0,0,.7);
+}
+.lockIcon{font-size:46px;margin-bottom:10px;filter:drop-shadow(0 0 22px rgba(0,229,160,.4))}
+.lockTitle{font-family:var(--mono);font-size:16px;font-weight:700;color:var(--tx);letter-spacing:.3px}
+.lockSub{font-family:var(--mono);font-size:11px;color:var(--tx2);margin:8px 0 18px;line-height:1.6}
+.lockInput{
+  width:100%;background:var(--s2);border:1px solid var(--bd);border-radius:9px;
+  color:var(--tx);font-family:var(--mono);font-size:14px;padding:12px 14px;outline:none;transition:border-color .18s;
+}
+.lockInput:focus{border-color:var(--green)}
+.lockBtn{
+  width:100%;margin-top:12px;cursor:pointer;
+  background:linear-gradient(135deg,var(--green),#059669);color:#021018;
+  border:none;border-radius:9px;font-family:var(--mono);font-weight:700;font-size:13px;
+  padding:12px 14px;letter-spacing:.4px;transition:transform .15s,box-shadow .15s;
+  box-shadow:0 6px 18px rgba(0,229,160,.25);
+}
+.lockBtn:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(0,229,160,.35)}
+.lockMsg{font-family:var(--mono);font-size:11px;color:var(--red);min-height:16px;margin-top:12px}
+
+/* ── MODAL (delete team) ── */
+.modal-bg{
+  position:fixed;inset:0;z-index:900;display:none;
+  align-items:flex-start;justify-content:center;padding:60px 18px;
+  background:rgba(3,5,10,.7);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+}
+.modal-bg.show{display:flex}
+.modal-card{
+  width:100%;max-width:380px;
+  background:var(--s0);border:1px solid var(--bd2);border-radius:14px;
+  padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.7);
+}
+.modal-h{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--red)}
+.modal-sub{font-family:var(--mono);font-size:11px;color:var(--tx2);margin:8px 0 4px;line-height:1.6}
+.modal-l{display:block;font-family:var(--mono);font-size:9px;font-weight:600;color:var(--tx3);
+  text-transform:uppercase;letter-spacing:.7px;margin:14px 0 6px}
+.modal-card select,.modal-card input{
+  width:100%;background:var(--s2);border:1px solid var(--bd);border-radius:8px;
+  color:var(--tx);font-family:var(--mono);font-size:13px;padding:10px 12px;outline:none;transition:border-color .18s;
+}
+.modal-card select:focus,.modal-card input:focus{border-color:var(--bd2)}
+.modal-card select option{background:#0f172a;color:var(--tx)}
+.modal-msg{font-family:var(--mono);font-size:11px;color:var(--amber);min-height:16px;margin-top:12px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
 </style>
 </head>
 <body>
+
+<!-- ── MASTER-PASSWORD LOCK (shown by default; JS removes it once unlocked) ── -->
+<div id="lockScreen" class="lockScreen show">
+  <div class="lockCard">
+    <div class="lockIcon">🔒</div>
+    <div class="lockTitle">HIT Tracker — Locked</div>
+    <div class="lockSub">Enter the master password to view the history.</div>
+    <input id="lockPw" class="lockInput" type="password" placeholder="Master password" autocomplete="current-password" spellcheck="false">
+    <button id="lockGo" class="lockBtn">🔓 Unlock</button>
+    <div id="lockMsg" class="lockMsg"></div>
+  </div>
+</div>
 
 <div class="hdr">
   <div class="logo">📡 MTurk HIT Tracker <em>// LIVE</em></div>
@@ -273,9 +341,10 @@ tbody td{padding:8px 13px;vertical-align:middle}
     </select>
   </div>
   <div class="cbar-right">
-    <span class="memchip" id="memChip">🧠 loading memory…</span>
-    <button class="btn" id="expBtn" title="Download your full saved tracking history as a CSV file">⬇ Export CSV</button>
-    <button class="btn danger" id="resetBtn" title="Erase the saved tracking memory on this device">🗑 Reset</button>
+    <span class="memchip" id="memChip">🧠 loading…</span>
+    <button class="btn" id="expBtn" title="Download the full history as a CSV file">⬇ Export CSV</button>
+    <button class="btn danger" id="delTeamBtn" title="Delete a whole team's HIT history (password required)">🗑 Delete Team</button>
+    <button class="btn" id="lockBtn" title="Lock the dashboard">🔒 Lock</button>
   </div>
 </div>
 
@@ -326,12 +395,83 @@ tbody td{padding:8px 13px;vertical-align:middle}
   </div>
 </div>
 
+<!-- ── DELETE TEAM MODAL ── -->
+<div id="delModal" class="modal-bg">
+  <div class="modal-card">
+    <div class="modal-h">🗑 Delete a Team's History</div>
+    <div class="modal-sub">Every HIT for this team is permanently removed from the server, on all devices. This cannot be undone.</div>
+    <label class="modal-l">Team</label>
+    <select id="delTeamSel"></select>
+    <label class="modal-l">Master password</label>
+    <input id="delPw" type="password" placeholder="Password" autocomplete="off" spellcheck="false">
+    <div id="delMsg" class="modal-msg"></div>
+    <div class="modal-actions">
+      <button class="btn" id="delCancel">Cancel</button>
+      <button class="btn danger" id="delConfirm">Delete forever</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 /* ─────────────────────────────────────────────────────────
-   PANDA COMMANDER SERVER CONFIG
+   SERVER CONFIG + ACCESS TOKEN
 ───────────────────────────────────────────────────────── */
-const SERVER_URL = "";   // e.g. "http://38.58.179.188:3000" — leave empty when served from same server
-function api(path) { return (SERVER_URL || "") + path; }
+const SERVER_URL = "";   // leave empty when served from the same server
+let   AUTH_TOKEN = "";    // sha256(master password); set only after unlock
+// Every server call carries the token, so the history can't be read or deleted
+// without the master password. (Computed from "Noushad99#$".)
+const EXPECTED_HASH = "90ae7d9f203dd0561e433e617b24b8c49f48c77b992644f30a0dfaefbdb05f9d";
+function api(path) {
+  const base = (SERVER_URL || "") + path;
+  if (!AUTH_TOKEN) return base;
+  return base + (base.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(AUTH_TOKEN);
+}
+
+/* Pure-JS SHA-256 — works on http:// where window.crypto.subtle is unavailable.
+   (Verified against standard test vectors.) */
+function sha256hex(ascii) {
+  function rr(v, a) { return (v >>> a) | (v << (32 - a)); }
+  var mp = Math.pow, maxWord = mp(2, 32), result = "", words = [];
+  var bitLen = ascii.length * 8;
+  var hash = sha256hex.h = sha256hex.h || [];
+  var k = sha256hex.k = sha256hex.k || [];
+  var pc = k.length, comp = {};
+  for (var cand = 2; pc < 64; cand++) {
+    if (!comp[cand]) {
+      for (var i = 0; i < 313; i += cand) comp[i] = cand;
+      hash[pc] = (mp(cand, .5) * maxWord) | 0;
+      k[pc++] = (mp(cand, 1 / 3) * maxWord) | 0;
+    }
+  }
+  ascii += "\x80";
+  while (ascii.length % 64 - 56) ascii += "\x00";
+  for (i = 0; i < ascii.length; i++) {
+    var j = ascii.charCodeAt(i);
+    if (j >> 8) return null;
+    words[i >> 2] |= j << ((3 - i) % 4) * 8;
+  }
+  words[words.length] = (bitLen / maxWord) | 0;
+  words[words.length] = bitLen;
+  for (j = 0; j < words.length;) {
+    var w = words.slice(j, j += 16), oldHash = hash;
+    hash = hash.slice(0, 8);
+    for (i = 0; i < 64; i++) {
+      var w15 = w[i - 15], w2 = w[i - 2], a = hash[0], e = hash[4];
+      var t1 = hash[7] + (rr(e, 6) ^ rr(e, 11) ^ rr(e, 25)) + ((e & hash[5]) ^ ((~e) & hash[6])) + k[i]
+        + (w[i] = (i < 16) ? w[i] : (w[i - 16] + (rr(w15, 7) ^ rr(w15, 18) ^ (w15 >>> 3))
+          + w[i - 7] + (rr(w2, 17) ^ rr(w2, 19) ^ (w2 >>> 10))) | 0);
+      var t2 = (rr(a, 2) ^ rr(a, 13) ^ rr(a, 22)) + ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
+      hash = [(t1 + t2) | 0].concat(hash);
+      hash[4] = (hash[4] + t1) | 0;
+    }
+    for (i = 0; i < 8; i++) hash[i] = (hash[i] + oldHash[i]) | 0;
+  }
+  for (i = 0; i < 8; i++) for (j = 3; j + 1; j--) {
+    var b = (hash[i] >> (j * 8)) & 255;
+    result += ((b < 16) ? 0 : "") + b.toString(16);
+  }
+  return result;
+}
 
 /* ─────────────────────────────────────────────────────────
    MEMORY ENGINE  (IndexedDB persistent archive)
@@ -397,6 +537,16 @@ async function archiveClear() {
   return new Promise(res => {
     let tx; try { tx = db.transaction(STORE, "readwrite"); } catch (_) { return res(); }
     try { tx.objectStore(STORE).clear(); } catch (_) {}
+    tx.oncomplete = () => res(); tx.onerror = () => res();
+  });
+}
+async function archiveDeleteMany(ids) {
+  if (!ids || !ids.length) return;
+  const db = await dbp; if (!db) return;
+  return new Promise(res => {
+    let tx; try { tx = db.transaction(STORE, "readwrite"); } catch (_) { return res(); }
+    const os = tx.objectStore(STORE);
+    for (const id of ids) { if (id) { try { os.delete(id); } catch (_) {} } }
     tx.oncomplete = () => res(); tx.onerror = () => res();
   });
 }
@@ -480,16 +630,12 @@ attachLiveFilters();
 
 /* ── Export / Reset memory ── */
 document.getElementById("expBtn").addEventListener("click", async () => {
-  let rows = await archiveGetAll();
-  if (!rows || !rows.length) rows = allHits;
-  rows = rows.slice().sort((a, b) => tsOf(b.acceptedAt) - tsOf(a.acceptedAt));
+  // Export the authoritative in-memory set (the full server history); fall back
+  // to the offline cache only if we have nothing loaded yet.
+  let rows = allHits.slice();
+  if (!rows.length) rows = await archiveGetAll();
+  rows.sort((a, b) => tsOf(b.acceptedAt) - tsOf(a.acceptedAt));
   download("mturk_hits_" + new Date().toISOString().slice(0, 10) + ".csv", toCSV(rows), "text/csv");
-});
-document.getElementById("resetBtn").addEventListener("click", async () => {
-  if (!confirm("Erase ALL saved tracking memory on THIS device?\n\nThis cannot be undone. (Tip: Export CSV first.)")) return;
-  await archiveClear();
-  allHits = []; byId.clear();
-  updateMemChip(); applyFilters();
 });
 
 function toCSV(rows) {
@@ -579,17 +725,36 @@ function mergeHit(hit) {
 // Pull from the server. full=true → entire history (reconciles a fresh or
 // out-of-date device); full=false → only records changed since lastSyncTs.
 async function pullFromServer(full) {
+  if (!AUTH_TOKEN) return;             // locked → never fetch
   try {
     const qs = full
       ? "limit=0"
       : "since=" + encodeURIComponent(new Date(lastSyncTs || 0).toISOString());
     const res = await fetch(api(`/hits.json?${qs}&_=${Date.now()}`), { cache: "no-store" });
+    if (res.status === 401) { lockNow("Session expired — please enter the password again."); return; }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    const merged = [];
-    (Array.isArray(data) ? data : []).forEach(h => { const m = mergeHit(h); if (m) merged.push(m); });
-    trackSyncTs(merged);
-    if (merged.length) archivePutMany(merged);
+    const list = Array.isArray(data) ? data : [];
+
+    if (full) {
+      // SERVER IS THE SINGLE SOURCE OF TRUTH. Replace the working set with the
+      // server's data so EVERY device shows exactly the same thing — no device
+      // can keep showing extra/stale rows from its own local cache. Then drop
+      // any now-deleted ids from the offline cache so they don't reappear.
+      const oldIds = new Set(byId.keys());
+      allHits = []; byId.clear();
+      list.forEach(h => mergeHit(h));
+      trackSyncTs(list);
+      const serverIds = new Set(byId.keys());
+      const stale = [...oldIds].filter(id => !serverIds.has(id));
+      if (stale.length) archiveDeleteMany(stale);
+      archivePutMany(list);
+    } else {
+      const merged = [];
+      list.forEach(h => { const m = mergeHit(h); if (m) merged.push(m); });
+      trackSyncTs(merged);
+      if (merged.length) archivePutMany(merged);
+    }
     showErr(null);
     markRender();
   } catch (e) {
@@ -644,6 +809,7 @@ let sseSource = null;
 let sseRetryDelay = 2000;
 
 function startSSE() {
+  if (!AUTH_TOKEN) return;                 // never connect while locked
   try { sseSource?.close(); } catch (_) {}
   sseSource = new EventSource(api("/hits/stream"));
 
@@ -662,7 +828,7 @@ function startSSE() {
   });
   sseSource.onerror = () => {
     setTimeout(() => {
-      if (!sseSource || sseSource.readyState === 2) {
+      if (AUTH_TOKEN && (!sseSource || sseSource.readyState === 2)) {
         sseRetryDelay = Math.min(sseRetryDelay * 1.5, 30000);
         startSSE();
       }
@@ -682,8 +848,11 @@ function seedFrom(rows) {
   });
 }
 
-/* ── Boot: cache first (instant, offline-proof), then converge on the server ── */
-(async function boot() {
+/* ── Engine: runs ONLY after the dashboard is unlocked ── */
+let engineStarted = false;
+async function startEngine() {
+  if (engineStarted) { pullFromServer(true); if (!sseSource || sseSource.readyState === 2) startSSE(); return; }
+  engineStarted = true;
   const rows = await archiveGetAll();
   seedFrom(rows);
   trackSyncTs(rows);
@@ -693,8 +862,83 @@ function seedFrom(rows) {
 
   startSSE();                         // live channel first, so no events are missed
   await migrateLocalToServer(rows);   // one-time: this browser's memory → server
-  await pullFromServer(true);         // full history → all devices converge
+  await pullFromServer(true);         // full history → all devices converge on the server
   setInterval(() => pullFromServer(false), POLL_MS * 12);  // delta safety net / 60s
+}
+
+/* ── LOCK / UNLOCK (master password gate) ──
+   Nothing is fetched or shown until the correct password is entered. The token
+   (a hash of the password) is what unlocks the server, so the history can't be
+   seen without it — on this device or any other. ── */
+const AUTH_KEY = "mrp_auth_token";
+function lockNow(msg) {
+  AUTH_TOKEN = "";
+  try { localStorage.removeItem(AUTH_KEY); } catch (_) {}
+  try { sseSource && sseSource.close(); } catch (_) {}
+  const ls = document.getElementById("lockScreen");
+  if (ls) ls.classList.add("show");
+  const m = document.getElementById("lockMsg"); if (m) m.textContent = msg || "";
+  const pw = document.getElementById("lockPw"); if (pw) { pw.value = ""; setTimeout(() => pw.focus(), 60); }
+}
+function unlockWith(token) {
+  AUTH_TOKEN = token;
+  try { localStorage.setItem(AUTH_KEY, token); } catch (_) {}
+  const ls = document.getElementById("lockScreen"); if (ls) ls.classList.remove("show");
+  startEngine();
+}
+function tryUnlock(pw) {
+  const m = document.getElementById("lockMsg");
+  if (!pw) { if (m) m.textContent = "Enter the password."; return; }
+  if (sha256hex(pw) === EXPECTED_HASH) { if (m) m.textContent = ""; unlockWith(EXPECTED_HASH); }
+  else { if (m) m.textContent = "❌ Wrong password."; const i = document.getElementById("lockPw"); if (i) i.value = ""; }
+}
+document.getElementById("lockGo").addEventListener("click", () => tryUnlock(document.getElementById("lockPw").value));
+document.getElementById("lockPw").addEventListener("keydown", e => { if (e.key === "Enter") tryUnlock(e.target.value); });
+document.getElementById("lockBtn").addEventListener("click", () => lockNow("Locked."));
+
+/* ── Team delete (password required, server-enforced) ── */
+const delModal = document.getElementById("delModal");
+document.getElementById("delTeamBtn").addEventListener("click", () => {
+  const teams = [...new Set(allHits.map(h => h.teamname || "No Team"))].sort();
+  const sel = document.getElementById("delTeamSel");
+  sel.innerHTML = teams.length
+    ? teams.map(t => `<option value="${x(t)}">${x(t)}</option>`).join("")
+    : `<option value="">(no teams)</option>`;
+  document.getElementById("delPw").value = "";
+  document.getElementById("delMsg").textContent = "";
+  delModal.classList.add("show");
+});
+document.getElementById("delCancel").addEventListener("click", () => delModal.classList.remove("show"));
+delModal.addEventListener("click", e => { if (e.target === delModal) delModal.classList.remove("show"); });
+document.getElementById("delConfirm").addEventListener("click", async () => {
+  const team = document.getElementById("delTeamSel").value;
+  const pw   = document.getElementById("delPw").value;
+  const m    = document.getElementById("delMsg");
+  if (!team) { m.textContent = "Pick a team."; return; }
+  if (sha256hex(pw) !== EXPECTED_HASH) { m.textContent = "❌ Wrong password."; return; }
+  m.textContent = "Deleting…";
+  try {
+    const res = await fetch(api("/hits/team/" + encodeURIComponent(team)), { method: "DELETE" });
+    if (res.status === 401) { m.textContent = "❌ Unauthorized."; return; }
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const out = await res.json();
+    const rm = [];
+    allHits = allHits.filter(h => {
+      if ((h.teamname || "No Team") === team) { rm.push(h.id); byId.delete(h.id); return false; }
+      return true;
+    });
+    if (rm.length) archiveDeleteMany(rm);
+    m.textContent = "✅ Deleted " + (out.deleted != null ? out.deleted : rm.length) + " HITs for “" + team + "”.";
+    markRender();
+    setTimeout(() => delModal.classList.remove("show"), 1100);
+  } catch (e) { m.textContent = "❌ " + e.message; }
+});
+
+/* ── Init: unlock from a saved token, else show the lock screen ── */
+(function init() {
+  let saved = null; try { saved = localStorage.getItem(AUTH_KEY); } catch (_) {}
+  if (saved === EXPECTED_HASH) { AUTH_TOKEN = saved; const ls = document.getElementById("lockScreen"); if (ls) ls.classList.remove("show"); startEngine(); }
+  else { lockNow(""); }
 })();
 
 /* ── Error banner ── */
