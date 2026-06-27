@@ -77,6 +77,12 @@ select{
 }
 select option{background:#0f172a;color:var(--tx)}
 #hrC{display:none}
+.dateInp{
+  background:transparent;border:none;outline:none;color:var(--tx);
+  font-family:var(--mono);font-size:11px;font-weight:600;cursor:pointer;
+  color-scheme:dark;min-width:118px;padding:0 2px;
+}
+.dateInp::-webkit-calendar-picker-indicator{filter:invert(.65);cursor:pointer}
 
 /* ── TOOLBAR RIGHT (memory + actions) ── */
 .cbar-right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -307,6 +313,7 @@ tbody td{padding:8px 13px;vertical-align:middle}
     <select id="fqSel">
       <option value="hourly">Hourly</option>
       <option value="daily">Daily</option>
+      <option value="weekly">Weekly</option>
       <option value="monthly">Monthly</option>
       <option value="yearly">Yearly</option>
     </select>
@@ -340,6 +347,15 @@ tbody td{padding:8px 13px;vertical-align:middle}
       <option value="timed_out">Timed Out</option>
     </select>
   </div>
+  <div class="ctrl">
+    <span class="cl">FROM</span>
+    <input type="date" id="fromDate" class="dateInp">
+  </div>
+  <div class="ctrl">
+    <span class="cl">TO</span>
+    <input type="date" id="toDate" class="dateInp">
+  </div>
+  <button class="btn" id="clrRange" title="Clear the date range">✕ Range</button>
   <div class="cbar-right">
     <span class="memchip" id="memChip">🧠 loading…</span>
     <button class="btn" id="expBtn" title="Download the full history as a CSV file">⬇ Export CSV</button>
@@ -568,8 +584,10 @@ async function archivePrune() {
 }
 
 /* ── State ── */
-let allHits   = [];           // working set (archive ∪ live), newest-first
-const byId    = new Map();    // id → hit object (O(1) merge, shared identity with allHits + archive)
+let allHits   = [];           // working set (= the server's data), newest-first
+const byId    = new Map();    // id → hit object (O(1) merge)
+const teamSet = new Set();    // live set of team names   (cheap dropdown rebuilds)
+const workerSet = new Set();  // live set of worker labels (cheap dropdown rebuilds)
 let dirty     = false;
 const TC      = new Map();    // assignmentId → { td, expiresMs }  (live countdown cells only)
 
@@ -580,6 +598,8 @@ const hrSel = document.getElementById("hrSel");
 const tmSel = document.getElementById("tmSel");
 const wkSel = document.getElementById("wkSel");
 const stSel = document.getElementById("stSel");
+const fromDate = document.getElementById("fromDate");
+const toDate   = document.getElementById("toDate");
 
 /* ── Small helpers ── */
 function tsOf(v) { const t = v ? new Date(v).getTime() : 0; return isNaN(t) ? 0 : t; }
@@ -594,7 +614,7 @@ function effStatus(h, nowMs) {
   return h.status || "active";
 }
 
-/* ── MEMORY ENGINE: restore static dropdown selections immediately ── */
+/* ── MEMORY ENGINE: restore static selections immediately ── */
 function loadStaticMemory() {
   const md = localStorage.getItem("mrp_dash_md");
   const fq = localStorage.getItem("mrp_dash_fq");
@@ -604,26 +624,38 @@ function loadStaticMemory() {
   if (fq !== null) fqSel.value = fq;
   if (hr !== null) hrSel.value = hr;
   if (st !== null) stSel.value = st;
+  const fd = localStorage.getItem("mrp_dash_fromDate");
+  const td = localStorage.getItem("mrp_dash_toDate");
+  if (fd) fromDate.value = fd;
+  if (td) toDate.value = td;
   updateControlVisibility();
 }
 
 function updateControlVisibility() {
   const isHistory = mdSel.value === "history";
+  const rangeOn = !!(fromDate.value || toDate.value);
   document.getElementById("fqLbl").textContent = isHistory ? "GROUP" : "VIEW";
   document.getElementById("hrC").style.display =
-    (!isHistory && fqSel.value === "hourly") ? "flex" : "none";
+    (!isHistory && fqSel.value === "hourly" && !rangeOn) ? "flex" : "none";
+  document.getElementById("clrRange").style.display = rangeOn ? "inline-flex" : "none";
 }
 loadStaticMemory();
 
 /* ── LIVE FILTERING ENGINE: instant update on change ── */
 function attachLiveFilters() {
-  [mdSel, fqSel, hrSel, tmSel, wkSel, stSel].forEach(select => {
-    select.addEventListener("change", e => {
+  [mdSel, fqSel, hrSel, tmSel, wkSel, stSel, fromDate, toDate].forEach(el => {
+    el.addEventListener("change", e => {
       localStorage.setItem("mrp_dash_" + e.target.id.replace("Sel", ""), e.target.value);
       updateControlVisibility();
       if (e.target.id === "mdSel") TC.clear();   // leaving live view ⇒ drop countdown cells
       applyFilters();
     });
+  });
+  document.getElementById("clrRange").addEventListener("click", () => {
+    fromDate.value = ""; toDate.value = "";
+    try { localStorage.removeItem("mrp_dash_fromDate"); localStorage.removeItem("mrp_dash_toDate"); } catch (_) {}
+    updateControlVisibility();
+    applyFilters();
   });
 }
 attachLiveFilters();
@@ -716,7 +748,10 @@ function mergeHit(hit) {
   if (!id) return null;
   hit.id = id;
   const ex = byId.get(id);
-  if (ex) { Object.assign(ex, hit); return ex; }
+  const rec = ex ? (Object.assign(ex, hit), ex) : hit;
+  teamSet.add(rec.teamname || "No Team");
+  workerSet.add(rec.username || rec.workerId || "?");
+  if (ex) return ex;
   byId.set(id, hit);
   allHits.unshift(hit);
   return hit;
@@ -737,17 +772,15 @@ async function pullFromServer(full) {
     const list = Array.isArray(data) ? data : [];
 
     if (full) {
-      // SERVER IS THE SINGLE SOURCE OF TRUTH. Replace the working set with the
-      // server's data so EVERY device shows exactly the same thing — no device
-      // can keep showing extra/stale rows from its own local cache. Then drop
-      // any now-deleted ids from the offline cache so they don't reappear.
-      const oldIds = new Set(byId.keys());
-      allHits = []; byId.clear();
+      // SERVER IS THE SINGLE SOURCE OF TRUTH for what is DISPLAYED, so every
+      // device with the same view shows exactly the same thing. We rebuild the
+      // in-memory set from the server, then mirror it into the offline cache.
+      // We deliberately do NOT delete anything from the cache here — destroying
+      // cached rows that the server happens not to have (yet) is how history got
+      // wiped before. Real deletes arrive via the hit-delete SSE event instead.
+      allHits = []; byId.clear(); teamSet.clear(); workerSet.clear();
       list.forEach(h => mergeHit(h));
       trackSyncTs(list);
-      const serverIds = new Set(byId.keys());
-      const stale = [...oldIds].filter(id => !serverIds.has(id));
-      if (stale.length) archiveDeleteMany(stale);
       archivePutMany(list);
     } else {
       const merged = [];
@@ -764,14 +797,14 @@ async function pullFromServer(full) {
   }
 }
 
-// ONE-TIME migration: push this browser's locally-cached HITs up to the server
-// so nothing that was only ever stored in this one browser is lost, and every
-// device converges on the same complete history. The server merges with status
-// precedence, so this can NEVER downgrade a real Submitted to Active/Expired.
+// ONE-TIME RECOVERY: push every HIT this browser still has cached locally up to
+// the server (idempotent merge with status precedence). This is what gets older
+// history that only ever lived in a browser back onto the server, so it shows on
+// every device — and it NEVER deletes anything. Runs once per browser (v3 flag).
 async function migrateLocalToServer(rows) {
   try {
-    if (localStorage.getItem("mrp_migrated_v2") === "1") return;
-    if (!rows || !rows.length) { localStorage.setItem("mrp_migrated_v2", "1"); return; }
+    if (localStorage.getItem("mrp_recovered_v3") === "1") return;
+    if (!rows || !rows.length) { localStorage.setItem("mrp_recovered_v3", "1"); return; }
     for (let i = 0; i < rows.length; i += 500) {
       const chunk = rows.slice(i, i + 500);
       const res = await fetch(api("/hits/bulk"), {
@@ -781,7 +814,7 @@ async function migrateLocalToServer(rows) {
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
     }
-    localStorage.setItem("mrp_migrated_v2", "1");
+    localStorage.setItem("mrp_recovered_v3", "1");
   } catch (_) {
     // Server down — leave the flag unset so we retry on the next load. Harmless.
   }
@@ -899,7 +932,7 @@ document.getElementById("lockBtn").addEventListener("click", () => lockNow("Lock
 /* ── Team delete (password required, server-enforced) ── */
 const delModal = document.getElementById("delModal");
 document.getElementById("delTeamBtn").addEventListener("click", () => {
-  const teams = [...new Set(allHits.map(h => h.teamname || "No Team"))].sort();
+  const teams = [...teamSet].sort();
   const sel = document.getElementById("delTeamSel");
   sel.innerHTML = teams.length
     ? teams.map(t => `<option value="${x(t)}">${x(t)}</option>`).join("")
@@ -928,6 +961,7 @@ document.getElementById("delConfirm").addEventListener("click", async () => {
       return true;
     });
     if (rm.length) archiveDeleteMany(rm);
+    teamSet.delete(team);
     m.textContent = "✅ Deleted " + (out.deleted != null ? out.deleted : rm.length) + " HITs for “" + team + "”.";
     markRender();
     setTimeout(() => delModal.classList.remove("show"), 1100);
@@ -951,10 +985,10 @@ function showErr(msg) {
 /* ── DYNAMIC DROPDOWNS (with smart memory injection) ── */
 const _selSig = {};
 function rebuildSelects() {
-  const teams = [...new Set(allHits.map(h => h.teamname || "No Team"))].sort();
-  const wrks  = [...new Set(allHits.map(h => h.username || h.workerId || "?"))].sort();
-  fillDynamic("tmSel", teams, "All Teams");
-  fillDynamic("wkSel", wrks,  "All Workers");
+  // Uses the incrementally-maintained sets, so this stays cheap even with a
+  // very large history (no full O(n) rescan on every render).
+  fillDynamic("tmSel", [...teamSet].sort(), "All Teams");
+  fillDynamic("wkSel", [...workerSet].sort(), "All Workers");
 }
 function fillDynamic(id, items, ph) {
   const sig = items.join("");
@@ -982,12 +1016,23 @@ function applyFilters() {
   const now  = new Date();
   const nowMs = now.getTime();
 
+  // Custom date range (inclusive). When set, it overrides the rolling window
+  // and applies to BOTH views — e.g. 2026-06-19 → 2026-06-30.
+  const fromMs = fromDate.value ? new Date(fromDate.value + "T00:00:00").getTime() : null;
+  const toMs   = toDate.value   ? new Date(toDate.value   + "T23:59:59.999").getTime() : null;
+  const rangeOn = fromMs !== null || toMs !== null;
+
   let hits = allHits;
 
-  // Rolling time window applies to the LIVE view only. History always shows
-  // the complete saved record, grouped by the chosen bucket.
-  if (mode === "live") {
-    const MS = { hourly: hrs * 3600e3, daily: 86400e3, monthly: 30 * 86400e3, yearly: 365 * 86400e3 };
+  if (rangeOn) {
+    hits = hits.filter(h => {
+      // history counts a HIT on its real event date; live on its accept time
+      const t = (mode === "history") ? tsOf(eventAt(h, effStatus(h, nowMs))) : tsOf(h.acceptedAt);
+      return (fromMs === null || t >= fromMs) && (toMs === null || t <= toMs);
+    });
+  } else if (mode === "live") {
+    // Rolling time window (live only). History without a range shows everything.
+    const MS = { hourly: hrs * 3600e3, daily: 86400e3, weekly: 7 * 86400e3, monthly: 30 * 86400e3, yearly: 365 * 86400e3 };
     const cut = MS[freq] ? new Date(now - MS[freq]) : null;
     if (cut) hits = hits.filter(h => h.acceptedAt && new Date(h.acceptedAt) >= cut);
   }
@@ -1255,6 +1300,14 @@ function bucketOf(d, gran) {
     return { key: `${Y}${p2(M+1)}${p2(D)}${p2(H)}`,
              label: `${WD[d.getDay()]} ${p2(D)} ${MO[M]} ${Y} · ${p2(H)}:00`,
              ts: new Date(Y, M, D, H).getTime() };
+  if (gran === "weekly") {
+    // week starting Monday
+    const mon = new Date(Y, M, D - ((d.getDay() + 6) % 7));
+    const end = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+    return { key: `W${mon.getFullYear()}${p2(mon.getMonth()+1)}${p2(mon.getDate())}`,
+             label: `Week of ${p2(mon.getDate())} ${MO[mon.getMonth()]} – ${p2(end.getDate())} ${MO[end.getMonth()]} ${end.getFullYear()}`,
+             ts: mon.getTime() };
+  }
   if (gran === "monthly")
     return { key: `${Y}${p2(M+1)}`, label: `${MO[M]} ${Y}`, ts: new Date(Y, M, 1).getTime() };
   if (gran === "yearly")

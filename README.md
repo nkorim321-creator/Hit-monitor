@@ -106,7 +106,17 @@ Panda Commander endpoints (`/teams/:team.json`, `/whoami`, `/workers.json`,
 ## Dashboard views
 
 - **Live** — current/recent HITs grouped by team, with live countdowns.
-- **History** — day / month / year breakdown per team: submitted, earned ($),
-  manual returns, auto-returns/expired, active. Each HIT is counted on the day
-  of its real event (submit / return / expiry).
+- **History** — hour / day / **week** / month / year breakdown per team:
+  submitted, earned ($), manual returns, auto-returns/expired, active. Each HIT
+  is counted on the day of its real event (submit / return / expiry).
+- **Date range** — set **FROM**/**TO** (e.g. 6/19/2026 → 6/30/2026) to show only
+  that period in either view; **✕ Range** clears it.
 - **Export CSV** downloads the full history; the 🧠 counter shows tracked records.
+
+### Data safety
+
+The dashboard never deletes history from the browser cache to "match" the
+server — older history that only lived in a browser is **uploaded** to the
+server (one-time recovery) instead, so nothing is lost. All HITs the userscript
+reports go straight to `data/state.json`, which survives server restarts. The
+only way to remove history is the explicit, password-protected **Delete Team**.
