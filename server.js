@@ -46,7 +46,21 @@ function isAuthed(req) {
 // ============================================================
 // Storage (simple JSON file, atomic write)
 // ============================================================
-let state = { teams: {}, hits: {} };
+// state.deleted = { id: timestamp } — "tombstones" of HITs that were explicitly
+// deleted, so a later re-upload (browser recovery) or a re-post (userscript) can
+// never bring a deleted HIT back from the dead.
+let state = { teams: {}, hits: {}, deleted: {} };
+const MAX_TOMBSTONES = 400000;
+
+function tombstone(ids) {
+    const now = Date.now();
+    for (const id of ids) state.deleted[String(id)] = now;
+    const keys = Object.keys(state.deleted);
+    if (keys.length > MAX_TOMBSTONES) {
+        keys.sort((a, b) => state.deleted[a] - state.deleted[b]);   // oldest first
+        for (let i = 0; i < keys.length - MAX_TOMBSTONES; i++) delete state.deleted[keys[i]];
+    }
+}
 
 function ensureDataDir() {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -61,6 +75,7 @@ function loadState() {
             if (parsed && typeof parsed === 'object') state = parsed;
             if (!state.teams) state.teams = {};
             if (!state.hits) state.hits = {};
+            if (!state.deleted) state.deleted = {};
             // Backfill `updatedAt` (ISO) for older HIT records that only have the
             // numeric `lastUpdatedAt`, so the dashboard's ?since= delta sync is
             // consistent for data that existed before this upgrade.
@@ -73,7 +88,7 @@ function loadState() {
         }
     } catch (e) {
         console.error('[STORAGE] Failed to load state:', e.message);
-        state = { teams: {}, hits: {} };
+        state = { teams: {}, hits: {}, deleted: {} };
     }
 }
 
@@ -309,6 +324,7 @@ app.post('/hits/bulk', (req, res) => {
     for (const item of list) {
         const id = item && (item.id || item.assignmentId);
         if (!id) continue;
+        if (state.deleted[String(id)]) continue;          // tombstoned ⇒ never resurrect
         broadcastHitUpdate('hit-update', mergeHitRecord(String(id), item));
         n++;
     }
@@ -320,6 +336,7 @@ app.post('/hits/bulk', (req, res) => {
 app.post('/hits/:assignmentId', (req, res) => {
     const id = req.params.assignmentId;
     if (!id) return res.status(400).json({ error: 'assignmentId required' });
+    if (state.deleted[String(id)]) return res.json({ id, skipped: true });  // tombstoned ⇒ stays deleted
 
     const incoming = req.body || {};
     if (typeof incoming !== 'object') {
@@ -416,6 +433,7 @@ app.delete('/hits/team/:team', (req, res) => {
         if (tn === team) { removed.push(id); delete state.hits[id]; }
     }
     if (removed.length) {
+        tombstone(removed);                 // remember them so they can't be re-uploaded
         saveState();
         for (const id of removed) broadcastHitUpdate('hit-delete', { id });
     }
@@ -428,6 +446,7 @@ app.delete('/hits/:assignmentId', (req, res) => {
     const id = req.params.assignmentId;
     if (state.hits[id]) {
         delete state.hits[id];
+        tombstone([id]);
         saveState();
         broadcastHitUpdate('hit-delete', { id });
     }
@@ -437,6 +456,7 @@ app.delete('/hits/:assignmentId', (req, res) => {
 // --- Delete all HITs (password-protected admin nuke) ---
 app.delete('/hits.json', (req, res) => {
     if (!isAuthed(req)) return res.status(401).json({ error: 'unauthorized' });
+    tombstone(Object.keys(state.hits));
     state.hits = {};
     saveState();
     broadcastHitUpdate('hit-clear', {});

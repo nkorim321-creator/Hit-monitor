@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MTurk HIT Tracker — Live + Memory (Local Server)</title>
+<link rel="icon" href="data:,">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -251,6 +253,15 @@ tbody td{padding:8px 13px;vertical-align:middle}
 .lockBtn:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(0,229,160,.35)}
 .lockMsg{font-family:var(--mono);font-size:11px;color:var(--red);min-height:16px;margin-top:12px}
 
+/* ── CAP NOTE (live view row limit) ── */
+.cap-note{
+  display:none;margin:0 22px 4px;padding:8px 13px;
+  background:var(--am2);border:1px solid rgba(251,191,36,.25);
+  border-radius:8px;font-family:var(--mono);font-size:10px;color:var(--amber);
+}
+.cap-note.show{display:block}
+@media(max-width:640px){.cap-note{margin-left:14px;margin-right:14px}}
+
 /* ── MODAL (delete team) ── */
 .modal-bg{
   position:fixed;inset:0;z-index:900;display:none;
@@ -402,6 +413,8 @@ tbody td{padding:8px 13px;vertical-align:middle}
     <div class="ss">auto / expired</div>
   </div>
 </div>
+
+<div id="capNote" class="cap-note"></div>
 
 <div class="body" id="body">
   <div class="empty">
@@ -590,6 +603,7 @@ const teamSet = new Set();    // live set of team names   (cheap dropdown rebuil
 const workerSet = new Set();  // live set of worker labels (cheap dropdown rebuilds)
 let dirty     = false;
 const TC      = new Map();    // assignmentId → { td, expiresMs }  (live countdown cells only)
+const LIVE_CAP = 1000;        // max rows the Live table draws at once (keeps it fast)
 
 /* ── DOM Elements ── */
 const mdSel = document.getElementById("mdSel");
@@ -773,13 +787,26 @@ async function pullFromServer(full) {
 
     if (full) {
       // SERVER IS THE SINGLE SOURCE OF TRUTH for what is DISPLAYED, so every
-      // device with the same view shows exactly the same thing. We rebuild the
-      // in-memory set from the server, then mirror it into the offline cache.
-      // We deliberately do NOT delete anything from the cache here — destroying
-      // cached rows that the server happens not to have (yet) is how history got
-      // wiped before. Real deletes arrive via the hit-delete SSE event instead.
-      allHits = []; byId.clear(); teamSet.clear(); workerSet.clear();
-      list.forEach(h => mergeHit(h));
+      // device with the same view shows exactly the same thing. Rebuild the
+      // in-memory set from the server in ONE O(n) pass (the server already sorts
+      // newest-first). Using mergeHit()'s unshift in a loop here would be O(n²)
+      // and is what made a large history crawl. We deliberately do NOT delete
+      // anything from the cache — that wiped history before; real deletes arrive
+      // via the hit-delete SSE event instead.
+      byId.clear(); teamSet.clear(); workerSet.clear();
+      const arr = [];
+      for (const h of list) {
+        if (!h) continue;
+        const id = h.id || h.assignmentId; if (!id) continue;
+        h.id = id;
+        const ex = byId.get(id);
+        if (ex) { Object.assign(ex, h); continue; }   // de-dupe just in case
+        byId.set(id, h);
+        teamSet.add(h.teamname || "No Team");
+        workerSet.add(h.username || h.workerId || "?");
+        arr.push(h);
+      }
+      allHits = arr;
       trackSyncTs(list);
       archivePutMany(list);
     } else {
@@ -1041,9 +1068,27 @@ function applyFilters() {
   if (wrk)  hits = hits.filter(h => (h.username || h.workerId) === wrk);
   if (sts)  hits = hits.filter(h => effStatus(h, nowMs) === sts);
 
-  renderStats(hits, now);
-  if (mode === "history") renderHistory(hits, now);
-  else                    renderTeams(hits, now);
+  renderStats(hits, now);   // stats are computed over ALL matches (accurate)
+
+  const capEl = document.getElementById("capNote");
+  if (mode === "history") {
+    capEl.classList.remove("show");
+    renderHistory(hits, now);   // aggregated → no per-row DOM, fine at any size
+  } else {
+    // The Live table can't usefully draw tens of thousands of rows — render only
+    // the newest LIVE_CAP so a huge window (daily/weekly/yearly) stays instant.
+    let shown = hits;
+    if (hits.length > LIVE_CAP) {
+      shown = hits.slice(0, LIVE_CAP);
+      capEl.textContent = "⚡ Showing the newest " + LIVE_CAP.toLocaleString() +
+        " of " + hits.length.toLocaleString() +
+        " matching HITs (capped for speed). Use the History view or a tighter date range for the rest.";
+      capEl.classList.add("show");
+    } else {
+      capEl.classList.remove("show");
+    }
+    renderTeams(shown, now);
+  }
 }
 
 /* ── Stats ── */
