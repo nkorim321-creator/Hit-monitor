@@ -287,51 +287,69 @@ let allRows = [];
 const openTeams = new Set();
 let pollTimer = null;
 
-/* ── Data engine: team names from /teams.json ∪ earnings from /earnings.json ── */
+/* ── Data engine: team names from /teams.json ∪ earnings from /earnings.json.
+   Each source is fetched independently so a missing endpoint (old server) still
+   shows whatever we CAN load instead of hanging on "Loading…". ── */
 async function loadData() {
   if (!AUTH_TOKEN) return;
-  try {
-    const [tRes, eRes] = await Promise.all([
-      fetch(api("/teams.json?_=" + Date.now()), { cache: "no-store" }),
-      fetch(api("/earnings.json?_=" + Date.now()), { cache: "no-store" })
-    ]);
-    if (eRes.status === 401) { lockNow("Session expired — enter the password again."); return; }
-    if (!tRes.ok || !eRes.ok) throw new Error("HTTP " + (tRes.ok ? eRes.status : tRes.status));
-    const teamsObj = await tRes.json();
-    const logs = await eRes.json();
+  const note = document.getElementById("syncNote");
 
-    grouped = {}; allRows = [];
-    // 1) every Panda Commander team appears, even with zero earnings history
-    for (const t of Object.keys(teamsObj || {})) {
-      const name = String(t).trim().toUpperCase();
-      if (name && name !== "UNKNOWN" && !grouped[name]) grouped[name] = { rows: [], totalEarnings: 0 };
-    }
-    // 2) fold in the earnings logs
-    let grand = 0;
-    (Array.isArray(logs) ? logs : []).forEach(d => {
-      const r = normalize(d);
-      if (!r.team || r.team === "UNKNOWN") return;
-      if (!grouped[r.team]) grouped[r.team] = { rows: [], totalEarnings: 0 };
-      grouped[r.team].rows.push(r);
-      grouped[r.team].totalEarnings += r.earningsNum;
-      grand += r.earningsNum;
-      allRows.push(r);
-    });
+  const [tRes, eRes] = await Promise.allSettled([
+    fetch(api("/teams.json?_=" + Date.now()), { cache: "no-store" }),
+    fetch(api("/earnings.json?_=" + Date.now()), { cache: "no-store" })
+  ]);
 
-    document.getElementById("grandTotalHeader").textContent = "Total Earnings: $" + grand.toFixed(2);
-    document.getElementById("syncNote").textContent = "Synced: " + new Date().toLocaleTimeString();
-    render();
-  } catch (e) {
-    document.getElementById("syncNote").textContent = "⚠️ " + e.message;
+  // auth check (either endpoint can report it)
+  for (const r of [tRes, eRes]) {
+    if (r.status === "fulfilled" && r.value.status === 401) { lockNow("Session expired — enter the password again."); return; }
   }
+
+  let teamsObj = {}, logs = [], earningsOk = false, serverReachable = false;
+  if (tRes.status === "fulfilled" && tRes.value.ok) { serverReachable = true; try { teamsObj = await tRes.value.json(); } catch (_) {} }
+  if (eRes.status === "fulfilled") {
+    serverReachable = true;
+    if (eRes.value.ok) { earningsOk = true; try { logs = await eRes.value.json(); } catch (_) {} }
+  }
+
+  grouped = {}; allRows = [];
+  // 1) every Panda Commander team appears, even with zero earnings history
+  for (const t of Object.keys(teamsObj || {})) {
+    const name = String(t).trim().toUpperCase();
+    if (name && name !== "UNKNOWN" && !grouped[name]) grouped[name] = { rows: [], totalEarnings: 0 };
+  }
+  // 2) fold in the earnings logs
+  let grand = 0;
+  (Array.isArray(logs) ? logs : []).forEach(d => {
+    const r = normalize(d);
+    if (!r.team || r.team === "UNKNOWN") return;
+    if (!grouped[r.team]) grouped[r.team] = { rows: [], totalEarnings: 0 };
+    grouped[r.team].rows.push(r);
+    grouped[r.team].totalEarnings += r.earningsNum;
+    grand += r.earningsNum;
+    allRows.push(r);
+  });
+
+  document.getElementById("grandTotalHeader").textContent = "Total Earnings: $" + grand.toFixed(2);
+
+  if (!serverReachable) {
+    note.textContent = "⚠️ Can't reach the server — is it running?";
+  } else if (!earningsOk) {
+    // teams.json worked but earnings.json 404'd → old server.js still running
+    note.innerHTML = "⚠️ Server needs updating — replace <b>server.js</b> &amp; restart (Payments needs the new /earnings API).";
+  } else {
+    note.textContent = "Synced: " + new Date().toLocaleTimeString();
+  }
+  render(!serverReachable);
 }
 
 /* ── Render ── */
-function render() {
+function render(offline) {
   const body = document.getElementById("tableBody");
   const teams = Object.keys(grouped).sort();
   if (!teams.length) {
-    body.innerHTML = `<tr><td colspan="3" class="empty-note">No teams yet — teams appear here automatically from Panda Commander,\nand earnings rows appear as your scripts report them.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="3" class="empty-note">${offline
+      ? "⚠️ Server not reachable. Start the server, then press 🔄 Refresh."
+      : "No teams yet — teams appear here automatically from Panda Commander,\nand earnings rows appear as your scripts report them."}</td></tr>`;
     return;
   }
 

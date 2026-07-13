@@ -155,6 +155,21 @@ app.get('/health', (req, res) => {
     });
 });
 
+// ----- Version / feature check -----
+// Open this in a browser (http://<server-ip>:3000/version). If it lists
+// "earnings" and "tombstones", the NEW server is running. If you get 404,
+// the OLD server.js is still running — replace it and restart.
+const SERVER_VERSION = 'panda+hits+payments-2';
+app.get('/version', (req, res) => {
+    res.json({
+        version: SERVER_VERSION,
+        features: ['teams', 'hits', 'earnings', 'tombstones', 'auth'],
+        hits: Object.keys(state.hits).length,
+        earnings: Object.keys(state.earnings).length,
+        teams: Object.keys(state.teams).length
+    });
+});
+
 // ----- Read all (debug) -----
 app.get('/teams.json', (req, res) => {
     res.json(state.teams);

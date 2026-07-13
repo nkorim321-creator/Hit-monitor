@@ -18,6 +18,12 @@ One server powers **all three**:
 | `panda_commander.html` | The Panda Commander control UI. | In a tab, or directly at `/panda_commander.html` |
 | `payments.html` | The Payment Management UI — team earnings, expandable per-team logs, CSV export. Locked by the same master password (one unlock covers HIT Tracker + Payments). | In a tab, or directly at `/payments.html` |
 | `Hit_Monitor.user.js` | Tampermonkey userscript that detects HITs on `worker.mturk.com` and reports them to the server. | Each worker's browser |
+| `AB2soft_Earnings_Report.user.js` | Tampermonkey userscript that reads the MTurk **/earnings** page and posts each worker's earnings to the server (`POST /earnings`). Replaces the old Firebase version; only uploads workers whose `TEAM` is in the Google Sheet, once per day. | Each worker's browser |
+
+> **Is the right server running?** Open `http://<server-ip>:3000/version`. If it
+> returns JSON listing `"earnings"` and `"tombstones"`, the new server is live.
+> A **404** means the OLD `server.js` is still running — replace it and restart
+> (this is why the Payments page can show "Loading…" / "HTTP 404").
 
 > ⚠️ **Do NOT replace `server.js` with a HIT-only server** — it must keep the
 > Panda Commander routes or your RDP scripts stop working. `server.js` in this
