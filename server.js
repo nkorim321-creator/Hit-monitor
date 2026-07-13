@@ -49,7 +49,7 @@ function isAuthed(req) {
 // state.deleted = { id: timestamp } — "tombstones" of HITs that were explicitly
 // deleted, so a later re-upload (browser recovery) or a re-post (userscript) can
 // never bring a deleted HIT back from the dead.
-let state = { teams: {}, hits: {}, deleted: {} };
+let state = { teams: {}, hits: {}, deleted: {}, earnings: {} };
 const MAX_TOMBSTONES = 400000;
 
 function tombstone(ids) {
@@ -76,6 +76,7 @@ function loadState() {
             if (!state.teams) state.teams = {};
             if (!state.hits) state.hits = {};
             if (!state.deleted) state.deleted = {};
+            if (!state.earnings) state.earnings = {};
             // Backfill `updatedAt` (ISO) for older HIT records that only have the
             // numeric `lastUpdatedAt`, so the dashboard's ?since= delta sync is
             // consistent for data that existed before this upgrade.
@@ -88,7 +89,7 @@ function loadState() {
         }
     } catch (e) {
         console.error('[STORAGE] Failed to load state:', e.message);
-        state = { teams: {}, hits: {}, deleted: {} };
+        state = { teams: {}, hits: {}, deleted: {}, earnings: {} };
     }
 }
 
@@ -460,6 +461,75 @@ app.delete('/hits.json', (req, res) => {
     state.hits = {};
     saveState();
     broadcastHitUpdate('hit-clear', {});
+    res.json({ cleared: true });
+});
+
+// ============================================================
+// PAYMENT MANAGEMENT — team earnings logs (replaces Firebase "earnings_logs")
+// ============================================================
+//   POST   /earnings/:id      → upsert one log (OPEN — RDP scripts post here)
+//   POST   /earnings          → same, id derived from body (WORKER ID / workerId / id)
+//   GET    /earnings.json     → all logs                          [token]
+//   DELETE /earnings/:id      → remove one log                    [token]
+//   DELETE /earnings.json     → wipe all earnings history         [token]
+//
+// Scripts can keep sending the exact field names they sent to Firebase:
+// TEAM, USERNAME, "WORKER ID", "SERVER IP", currentEarnings, lastMonthEarnings,
+// lastTransferAmount, lastTransferDate, nextTransferDate, bankAccount, ip,
+// alert, timestamp — the payments page understands them as-is.
+
+function upsertEarning(id, body) {
+    const existing = state.earnings[id] || {};
+    const merged = { ...existing };
+    for (const k in body) {
+        if (!Object.prototype.hasOwnProperty.call(body, k)) continue;
+        const v = body[k];
+        if (v === null || v === undefined || v === '') continue;   // never wipe a known field
+        merged[k] = v;
+    }
+    merged.id = id;
+    if (!merged.timestamp) merged.timestamp = new Date().toISOString();
+    merged.updatedAt = new Date().toISOString();
+    state.earnings[id] = merged;
+    return merged;
+}
+
+app.post('/earnings/:id', (req, res) => {
+    const id = decodeURIComponent(req.params.id);
+    const body = req.body;
+    if (!body || typeof body !== 'object') return res.status(400).json({ error: 'Body must be a JSON object' });
+    const merged = upsertEarning(id, body);
+    saveState();
+    res.json(merged);
+});
+
+app.post('/earnings', (req, res) => {
+    const body = req.body;
+    if (!body || typeof body !== 'object') return res.status(400).json({ error: 'Body must be a JSON object' });
+    const id = String(body['WORKER ID'] || body.workerId || body.id ||
+                      ('log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)));
+    const merged = upsertEarning(id, body);
+    saveState();
+    res.json(merged);
+});
+
+app.get('/earnings.json', (req, res) => {
+    if (!isAuthed(req)) return res.status(401).json({ error: 'unauthorized' });
+    res.json(Object.values(state.earnings));
+});
+
+app.delete('/earnings/:id', (req, res) => {
+    if (!isAuthed(req)) return res.status(401).json({ error: 'unauthorized' });
+    const id = decodeURIComponent(req.params.id);
+    delete state.earnings[id];
+    saveState();
+    res.json({ deleted: id });
+});
+
+app.delete('/earnings.json', (req, res) => {
+    if (!isAuthed(req)) return res.status(401).json({ error: 'unauthorized' });
+    state.earnings = {};
+    saveState();
     res.json({ cleared: true });
 });
 

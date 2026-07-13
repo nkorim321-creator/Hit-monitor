@@ -880,11 +880,13 @@ function startSSE() {
   sseSource.addEventListener("hit-delete", ev => {
     try { deleteLocalHit(JSON.parse(ev.data).id); } catch (_) {}
   });
-  // NOTE: "hit-clear" only clears the LIVE working set + render. It does NOT
-  // wipe the archive — your historical memory must survive a server clear.
+  // "hit-clear" = the admin explicitly wiped ALL history (password-protected).
+  // Honour it fully on this device too: clear the view AND the offline cache,
+  // so the wiped data cannot come back from anywhere.
   sseSource.addEventListener("hit-clear", () => {
-    allHits = []; byId.clear(); markRender();
-    archiveGetAll().then(rows => { seedFrom(rows); markRender(); });
+    allHits = []; byId.clear(); teamSet.clear(); workerSet.clear();
+    archiveClear();
+    markRender();
   });
   sseSource.onerror = () => {
     setTimeout(() => {
@@ -913,6 +915,18 @@ let engineStarted = false;
 async function startEngine() {
   if (engineStarted) { pullFromServer(true); if (!sseSource || sseSource.readyState === 2) startSSE(); return; }
   engineStarted = true;
+
+  /* ONE-TIME FULL RESET (v4): a completely clean slate was requested — wipe this
+     browser's cached history and make sure none of it is ever re-uploaded. From
+     here on the view refills purely from the server. */
+  try {
+    if (localStorage.getItem("mrp_wiped_v4") !== "1") {
+      await archiveClear();
+      localStorage.setItem("mrp_recovered_v3", "1");   // nothing left to recover
+      localStorage.setItem("mrp_wiped_v4", "1");
+    }
+  } catch (_) {}
+
   const rows = await archiveGetAll();
   seedFrom(rows);
   trackSyncTs(rows);
@@ -961,9 +975,8 @@ const delModal = document.getElementById("delModal");
 document.getElementById("delTeamBtn").addEventListener("click", () => {
   const teams = [...teamSet].sort();
   const sel = document.getElementById("delTeamSel");
-  sel.innerHTML = teams.length
-    ? teams.map(t => `<option value="${x(t)}">${x(t)}</option>`).join("")
-    : `<option value="">(no teams)</option>`;
+  sel.innerHTML = teams.map(t => `<option value="${x(t)}">${x(t)}</option>`).join("") +
+    `<option value="__ALL__">🧹 ALL TEAMS — wipe the entire history</option>`;
   document.getElementById("delPw").value = "";
   document.getElementById("delMsg").textContent = "";
   delModal.classList.add("show");
@@ -978,6 +991,19 @@ document.getElementById("delConfirm").addEventListener("click", async () => {
   if (sha256hex(pw) !== EXPECTED_HASH) { m.textContent = "❌ Wrong password."; return; }
   m.textContent = "Deleting…";
   try {
+    if (team === "__ALL__") {
+      // Wipe EVERYTHING: server history (tombstoned so it can never come back)
+      // plus this device's view and offline cache.
+      const res = await fetch(api("/hits.json"), { method: "DELETE" });
+      if (res.status === 401) { m.textContent = "❌ Unauthorized."; return; }
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      allHits = []; byId.clear(); teamSet.clear(); workerSet.clear();
+      await archiveClear();
+      m.textContent = "✅ Entire history wiped — on every device.";
+      markRender();
+      setTimeout(() => delModal.classList.remove("show"), 1100);
+      return;
+    }
     const res = await fetch(api("/hits/team/" + encodeURIComponent(team)), { method: "DELETE" });
     if (res.status === 401) { m.textContent = "❌ Unauthorized."; return; }
     if (!res.ok) throw new Error("HTTP " + res.status);

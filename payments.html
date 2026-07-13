@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payment Management — Team Earnings</title>
+<link rel="icon" href="data:,">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+/* ========================= ULTRA PREMIUM DARK THEME ========================= */
+:root {
+  --bg-base: #0b1121;
+  --card-bg: #151e32;
+  --card-border: rgba(255, 255, 255, 0.08);
+  --accent-blue: #0084ff;
+  --accent-glow: rgba(0, 123, 255, 0.4);
+  --success-neon: #3ade82;
+  --danger: #f43f5e;
+  --muted: #94a3b8;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Outfit', sans-serif;
+  background-color: var(--bg-base);
+  padding: 30px 15px;
+  -webkit-font-smoothing: antialiased;
+}
+.container { max-width: 98%; margin: 0 auto; }
+
+/* ========================= HEADER ========================= */
+.dashboard-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 25px; background: var(--card-bg);
+  padding: 16px 24px; border-radius: 12px; border: 1px solid var(--card-border);
+  gap: 12px; flex-wrap: wrap;
+}
+.page-title { font-size: 22px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 12px; }
+.page-title span { color: var(--accent-blue); }
+.header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.grand-total {
+  background: rgba(58, 222, 130, 0.08); border: 1px solid rgba(58, 222, 130, 0.2);
+  color: var(--success-neon); padding: 8px 16px; border-radius: 8px;
+  font-size: 18px; font-weight: 800;
+}
+.btn-export-all, .btn-hdr {
+  background: var(--accent-blue); color: white; border: none;
+  padding: 10px 18px; border-radius: 8px; cursor: pointer;
+  font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 14px;
+}
+.btn-export-all:hover { background: #006bce; }
+.btn-hdr.ghost { background: #1e293b; color: #cbd5e1; border: 1px solid var(--card-border); }
+.btn-hdr.ghost:hover { background: #273449; color: #fff; }
+#syncNote { color: var(--muted); font-size: 12px; font-weight: 500; }
+
+/* ========================= MAIN TABLE ========================= */
+.table-container { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--card-border); overflow: hidden; }
+#mainTable { width: 100%; border-collapse: collapse; }
+.main-thead th {
+  background: #1e293b; color: #94a3b8; text-align: left; padding: 18px 24px;
+  font-size: 14px; font-weight: 700; text-transform: uppercase; border-bottom: 1px solid var(--card-border);
+}
+.summary-row { cursor: pointer; border-bottom: 1px solid var(--card-border); background: var(--card-bg); }
+.summary-row:hover { background: #1e293b; }
+.summary-row td { padding: 20px 24px; font-size: 18px; font-weight: 800; color: var(--success-neon); }
+.summary-row td:first-child { color: #ffffff; }
+.team-name { display: flex; align-items: center; gap: 12px; }
+.chevron { width: 18px; height: 18px; color: var(--accent-blue); transition: transform 0.3s ease; flex-shrink: 0; }
+.chevron.open { transform: rotate(90deg); }
+.empty-note { padding: 46px 24px; text-align: center; color: var(--muted); font-size: 15px; font-weight: 500; }
+
+/* ========================= INNER (CHILD) TABLE ========================= */
+.child-row { display: none; background-color: #0b1121; }
+.child-row.active { display: table-row; }
+.child-container { padding: 20px; border-bottom: 2px solid var(--card-border); }
+.team-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }
+.team-actions h3 { font-size: 15px; color: #cbd5e1; font-weight: 600; }
+.btn-sm {
+  background: #ffffff; color: #0f172a; border: none; padding: 8px 16px;
+  border-radius: 4px; cursor: pointer; font-family: 'Outfit', sans-serif; font-size: 13px; font-weight: 700;
+}
+.btn-sm:hover { background: #e2e8f0; }
+.inner-table-wrapper { background: #111827; border-radius: 6px; border: 1px solid var(--card-border); width: 100%; overflow-x: auto; }
+.inner-table { width: 100%; border-collapse: collapse; min-width: 1600px; }
+.inner-table th {
+  background: var(--accent-blue); color: #fff; padding: 16px 14px;
+  font-size: 14px; font-weight: 800; text-align: left; text-transform: uppercase;
+}
+.inner-table td {
+  padding: 18px 14px; font-size: 16px !important; font-weight: 800 !important;
+  color: var(--success-neon) !important; border-bottom: 1px solid rgba(255,255,255,0.05);
+  white-space: nowrap; vertical-align: middle; letter-spacing: 0.5px;
+}
+.inner-table tr:hover td { background: rgba(255, 255, 255, 0.04); }
+.inner-table tr:last-child td { border-bottom: none; }
+.no-logs { padding: 22px; color: var(--muted); font-size: 14px; font-weight: 500; }
+
+/* ========================= LOCK SCREEN ========================= */
+.lockScreen {
+  position: fixed; inset: 0; z-index: 1000; display: none;
+  align-items: center; justify-content: center; padding: 24px;
+  background: radial-gradient(ellipse 60% 50% at 50% 28%, rgba(0,132,255,.08), transparent), rgba(4, 7, 16, .95);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.lockScreen.show { display: flex; }
+.lockCard {
+  width: 100%; max-width: 340px; text-align: center;
+  background: var(--card-bg); border: 1px solid rgba(255,255,255,.14);
+  border-radius: 16px; padding: 32px 26px; box-shadow: 0 30px 80px rgba(0,0,0,.7);
+}
+.lockIcon { font-size: 46px; margin-bottom: 10px; filter: drop-shadow(0 0 22px rgba(0,132,255,.45)); }
+.lockTitle { font-size: 17px; font-weight: 800; color: #fff; }
+.lockSub { font-size: 12px; color: var(--muted); margin: 8px 0 18px; line-height: 1.6; }
+.lockInput {
+  width: 100%; background: #0f172a; border: 1px solid var(--card-border); border-radius: 9px;
+  color: #fff; font-family: 'Outfit', sans-serif; font-size: 14px; padding: 12px 14px; outline: none;
+}
+.lockInput:focus { border-color: var(--accent-blue); }
+.lockBtn {
+  width: 100%; margin-top: 12px; cursor: pointer;
+  background: linear-gradient(135deg, var(--accent-blue), #0062c4); color: #fff;
+  border: none; border-radius: 9px; font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 14px;
+  padding: 12px 14px; box-shadow: 0 6px 18px rgba(0,132,255,.3);
+}
+.lockBtn:hover { filter: brightness(1.08); }
+.lockMsg { font-size: 12px; color: var(--danger); min-height: 16px; margin-top: 12px; font-weight: 600; }
+
+@media (max-width: 640px) {
+  body { padding: 16px 8px; }
+  .dashboard-header { padding: 14px 16px; }
+  .page-title { font-size: 18px; }
+  .grand-total { font-size: 15px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── MASTER-PASSWORD LOCK (shown by default; JS removes once unlocked) ── -->
+<div id="lockScreen" class="lockScreen show">
+  <div class="lockCard">
+    <div class="lockIcon">💰</div>
+    <div class="lockTitle">Payment Management — Locked</div>
+    <div class="lockSub">Enter the master password to view team earnings.</div>
+    <input id="lockPw" class="lockInput" type="password" placeholder="Master password" autocomplete="current-password" spellcheck="false">
+    <button id="lockGo" class="lockBtn">🔓 Unlock</button>
+    <div id="lockMsg" class="lockMsg"></div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="dashboard-header">
+    <div class="page-title"><span>💰</span> Payment Management</div>
+    <div class="header-actions">
+      <span id="syncNote">Connecting…</span>
+      <div class="grand-total" id="grandTotalHeader">Total Earnings: $0.00</div>
+      <button class="btn-hdr ghost" id="refreshBtn">🔄 Refresh</button>
+      <button class="btn-export-all" id="exportAllBtn">⬇ Export Database (CSV)</button>
+      <button class="btn-hdr ghost" id="lockBtn">🔒 Lock</button>
+    </div>
+  </div>
+
+  <div class="table-container">
+    <table id="mainTable">
+      <thead class="main-thead">
+        <tr>
+          <th style="width: 35%;">Team Group</th>
+          <th style="width: 30%;">Active Workers</th>
+          <th style="width: 35%;">Total Generated ($)</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <tr><td colspan="3" class="empty-note">⏳ Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script type="module">
+/* ─────────────────────────────────────────────────────────
+   SERVER CONFIG + ACCESS TOKEN  (same server + same master
+   password as the HIT Tracker — one unlock covers both)
+───────────────────────────────────────────────────────── */
+const SERVER_URL = "";   // leave empty when served from the same server
+let   AUTH_TOKEN = "";
+const EXPECTED_HASH = "90ae7d9f203dd0561e433e617b24b8c49f48c77b992644f30a0dfaefbdb05f9d";
+const AUTH_KEY = "mrp_auth_token";   // shared with dashboard.html → single sign-on
+function api(path) {
+  const base = (SERVER_URL || "") + path;
+  if (!AUTH_TOKEN) return base;
+  return base + (base.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(AUTH_TOKEN);
+}
+
+/* Pure-JS SHA-256 — works on http:// where crypto.subtle is unavailable. */
+function sha256hex(ascii) {
+  function rr(v, a) { return (v >>> a) | (v << (32 - a)); }
+  var mp = Math.pow, maxWord = mp(2, 32), result = "", words = [];
+  var bitLen = ascii.length * 8;
+  var hash = sha256hex.h = sha256hex.h || [];
+  var k = sha256hex.k = sha256hex.k || [];
+  var pc = k.length, comp = {};
+  for (var cand = 2; pc < 64; cand++) {
+    if (!comp[cand]) {
+      for (var i = 0; i < 313; i += cand) comp[i] = cand;
+      hash[pc] = (mp(cand, .5) * maxWord) | 0;
+      k[pc++] = (mp(cand, 1 / 3) * maxWord) | 0;
+    }
+  }
+  ascii += "\x80";
+  while (ascii.length % 64 - 56) ascii += "\x00";
+  for (i = 0; i < ascii.length; i++) {
+    var j = ascii.charCodeAt(i);
+    if (j >> 8) return null;
+    words[i >> 2] |= j << ((3 - i) % 4) * 8;
+  }
+  words[words.length] = (bitLen / maxWord) | 0;
+  words[words.length] = bitLen;
+  for (j = 0; j < words.length;) {
+    var w = words.slice(j, j += 16), oldHash = hash;
+    hash = hash.slice(0, 8);
+    for (i = 0; i < 64; i++) {
+      var w15 = w[i - 15], w2 = w[i - 2], a = hash[0], e = hash[4];
+      var t1 = hash[7] + (rr(e, 6) ^ rr(e, 11) ^ rr(e, 25)) + ((e & hash[5]) ^ ((~e) & hash[6])) + k[i]
+        + (w[i] = (i < 16) ? w[i] : (w[i - 16] + (rr(w15, 7) ^ rr(w15, 18) ^ (w15 >>> 3))
+          + w[i - 7] + (rr(w2, 17) ^ rr(w2, 19) ^ (w2 >>> 10))) | 0);
+      var t2 = (rr(a, 2) ^ rr(a, 13) ^ rr(a, 22)) + ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
+      hash = [(t1 + t2) | 0].concat(hash);
+      hash[4] = (hash[4] + t1) | 0;
+    }
+    for (i = 0; i < 8; i++) hash[i] = (hash[i] + oldHash[i]) | 0;
+  }
+  for (i = 0; i < 8; i++) for (j = 3; j + 1; j--) {
+    var b = (hash[i] >> (j * 8)) & 255;
+    result += ((b < 16) ? 0 : "") + b.toString(16);
+  }
+  return result;
+}
+
+/* ── Helpers ── */
+function x(s) {
+  return String(s === null || s === undefined ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function num(v) {
+  if (typeof v === "string") v = v.replace(/[^0-9.\-]+/g, "");
+  const n = parseFloat(v); return isNaN(n) ? 0 : n;
+}
+function safeVal(a, b) { const v = a || b; return (!v || v === "UNKNOWN") ? "—" : v; }
+function tsMs(t) {
+  if (!t) return 0;
+  if (typeof t === "number") return t;
+  if (t.seconds) return t.seconds * 1000;            // old Firebase shape, just in case
+  const n = new Date(t).getTime(); return isNaN(n) ? 0 : n;
+}
+function bdDate(t) { const ms = tsMs(t); return ms ? new Date(ms).toLocaleDateString("en-BD", { timeZone: "Asia/Dhaka", day: "2-digit", month: "2-digit", year: "numeric" }) : "—"; }
+function bdTime(t) { const ms = tsMs(t); return ms ? new Date(ms).toLocaleTimeString("en-BD", { timeZone: "Asia/Dhaka", hour12: true, hour: "2-digit", minute: "2-digit", second: "2-digit" }) : ""; }
+
+/* Normalise one server log — accepts the exact field names the RDP scripts
+   already send (Firebase style) as well as simple camelCase. */
+function normalize(d) {
+  const team = String(d.TEAM || d.team || "").trim().toUpperCase();
+  const cur = num(d.currentEarnings ?? d.prev_currentEarnings ?? 0);
+  const lastMonth = num(d.lastMonthEarnings ?? d.prev_lastMonthEarnings ?? 0);
+  const lastTransfer = num(d.lastTransferAmount ?? d.prev_lastTransferAmount ?? 0);
+  return {
+    id: d.id,
+    team: team,
+    serverIp: safeVal(d["SERVER IP"], d.serverIp || d.prev_serverIp),
+    username: safeVal(d["USERNAME"], d.username || d.prev_username),
+    workerId: safeVal(d["WORKER ID"], d.workerId || d.prev_workerId),
+    earningsNum: cur,
+    currentEarningsStr: "$" + cur.toFixed(2),
+    lastMonthStr: "$" + lastMonth.toFixed(2),
+    lastTransferStr: "$" + lastTransfer.toFixed(2),
+    lastTransferDate: safeVal(d.lastTransferDate, d.prev_lastTransferDate),
+    nextTransferDate: safeVal(d.nextTransferDate, d.prev_nextTransferDate),
+    transferMethod: safeVal(d.bankAccount || d.transferMethod, d.prev_bankAccount),
+    ip: safeVal(d.ip, d.prev_ip),
+    alert: d.alert || "",
+    dateStr: bdDate(d.timestamp), timeStr: bdTime(d.timestamp),
+    tsMillis: tsMs(d.timestamp)
+  };
+}
+
+/* ── State ── */
+let grouped = {};        // team → { rows, totalEarnings }
+let allRows = [];
+const openTeams = new Set();
+let pollTimer = null;
+
+/* ── Data engine: team names from /teams.json ∪ earnings from /earnings.json ── */
+async function loadData() {
+  if (!AUTH_TOKEN) return;
+  try {
+    const [tRes, eRes] = await Promise.all([
+      fetch(api("/teams.json?_=" + Date.now()), { cache: "no-store" }),
+      fetch(api("/earnings.json?_=" + Date.now()), { cache: "no-store" })
+    ]);
+    if (eRes.status === 401) { lockNow("Session expired — enter the password again."); return; }
+    if (!tRes.ok || !eRes.ok) throw new Error("HTTP " + (tRes.ok ? eRes.status : tRes.status));
+    const teamsObj = await tRes.json();
+    const logs = await eRes.json();
+
+    grouped = {}; allRows = [];
+    // 1) every Panda Commander team appears, even with zero earnings history
+    for (const t of Object.keys(teamsObj || {})) {
+      const name = String(t).trim().toUpperCase();
+      if (name && name !== "UNKNOWN" && !grouped[name]) grouped[name] = { rows: [], totalEarnings: 0 };
+    }
+    // 2) fold in the earnings logs
+    let grand = 0;
+    (Array.isArray(logs) ? logs : []).forEach(d => {
+      const r = normalize(d);
+      if (!r.team || r.team === "UNKNOWN") return;
+      if (!grouped[r.team]) grouped[r.team] = { rows: [], totalEarnings: 0 };
+      grouped[r.team].rows.push(r);
+      grouped[r.team].totalEarnings += r.earningsNum;
+      grand += r.earningsNum;
+      allRows.push(r);
+    });
+
+    document.getElementById("grandTotalHeader").textContent = "Total Earnings: $" + grand.toFixed(2);
+    document.getElementById("syncNote").textContent = "Synced: " + new Date().toLocaleTimeString();
+    render();
+  } catch (e) {
+    document.getElementById("syncNote").textContent = "⚠️ " + e.message;
+  }
+}
+
+/* ── Render ── */
+function render() {
+  const body = document.getElementById("tableBody");
+  const teams = Object.keys(grouped).sort();
+  if (!teams.length) {
+    body.innerHTML = `<tr><td colspan="3" class="empty-note">No teams yet — teams appear here automatically from Panda Commander,\nand earnings rows appear as your scripts report them.</td></tr>`;
+    return;
+  }
+
+  let html = "";
+  teams.forEach(team => {
+    const safeId = team.replace(/[^a-zA-Z0-9]/g, "_");
+    const g = grouped[team];
+    const isOpen = openTeams.has(safeId);
+
+    html += `
+      <tr class="summary-row" data-toggle="${x(safeId)}">
+        <td><div class="team-name">
+          <svg id="icon-${x(safeId)}" class="chevron ${isOpen ? "open" : ""}" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
+          ${x(team)}
+        </div></td>
+        <td>${g.rows.length}</td>
+        <td>$${g.totalEarnings.toFixed(2)}</td>
+      </tr>
+      <tr id="child-${x(safeId)}" class="child-row ${isOpen ? "active" : ""}">
+        <td colspan="3" style="padding:0;">
+          <div class="child-container">
+            <div class="team-actions">
+              <h3>Detailed Logs: ${x(team)}</h3>
+              <button class="btn-sm" data-export="${x(team)}">Export CSV</button>
+            </div>`;
+
+    if (!g.rows.length) {
+      html += `<div class="no-logs">No earnings history yet for this team — rows appear as soon as the scripts report.</div>`;
+    } else {
+      g.rows.sort((a, b) => b.tsMillis - a.tsMillis);
+      html += `
+            <div class="inner-table-wrapper"><table class="inner-table">
+              <thead><tr>
+                <th>SERVER IP</th><th>TEAM</th><th>USERNAME</th><th>WORKER ID</th>
+                <th>CURRENT EARNINGS</th><th>LAST MONTH</th><th>LAST TRANSFER ($)</th>
+                <th>LAST TRANSFER DATE</th><th>NEXT TRANSFER DATE</th><th>TRANSFER METHOD</th>
+                <th>IP</th><th>ALERT</th><th>TIMESTAMP (BD)</th>
+              </tr></thead><tbody>`;
+      g.rows.forEach(r => {
+        const isAlert = r.alert && r.alert.length > 0 && r.alert !== "✔ OK";
+        html += `<tr>
+          <td>${x(r.serverIp)}</td><td>${x(r.team)}</td><td>${x(r.username)}</td><td>${x(r.workerId)}</td>
+          <td>${x(r.currentEarningsStr)}</td><td>${x(r.lastMonthStr)}</td><td>${x(r.lastTransferStr)}</td>
+          <td>${x(r.lastTransferDate)}</td><td>${x(r.nextTransferDate)}</td><td>${x(r.transferMethod)}</td>
+          <td>${x(r.ip)}</td><td>${isAlert ? "⚠️ " + x(r.alert) : "✔️ OK"}</td>
+          <td>${x(r.dateStr)}, ${x(r.timeStr)}</td>
+        </tr>`;
+      });
+      html += `</tbody></table></div>`;
+    }
+    html += `</div></td></tr>`;
+  });
+  body.innerHTML = html;
+
+  // wire toggles + per-team export (no inline onclick — CSP-friendly)
+  body.querySelectorAll("[data-toggle]").forEach(tr => {
+    tr.addEventListener("click", () => {
+      const id = tr.dataset.toggle;
+      const child = document.getElementById("child-" + id);
+      const icon = document.getElementById("icon-" + id);
+      if (openTeams.has(id)) { openTeams.delete(id); child.classList.remove("active"); icon.classList.remove("open"); }
+      else { openTeams.add(id); child.classList.add("active"); icon.classList.add("open"); }
+    });
+  });
+  body.querySelectorAll("[data-export]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      const t = btn.dataset.export;
+      if (grouped[t] && grouped[t].rows.length) exportCSV(grouped[t].rows, t + "_Data");
+    });
+  });
+}
+
+/* ── CSV export ── */
+function exportCSV(rows, filename) {
+  const headers = ["SERVER IP","TEAM","USERNAME","WORKER ID","Current Earnings","Last Month",
+    "Last Transfer ($)","Last Transfer Date","Next Transfer Date","Transfer Method","IP","Alert","Timestamp (BD)"];
+  const data = rows.map(r => [r.serverIp, r.team, r.username, r.workerId, r.currentEarningsStr,
+    r.lastMonthStr, r.lastTransferStr, r.lastTransferDate, r.nextTransferDate, r.transferMethod,
+    r.ip, r.alert, r.dateStr + " " + r.timeStr]);
+  const csv = [headers, ...data].map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = filename + ".csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+document.getElementById("exportAllBtn").addEventListener("click", () => {
+  if (!allRows.length) { alert("No data to export yet!"); return; }
+  exportCSV(allRows, "All_Teams_Data");
+});
+document.getElementById("refreshBtn").addEventListener("click", loadData);
+
+/* ── LOCK / UNLOCK (same master password + shared token as the HIT Tracker) ── */
+function lockNow(msg) {
+  AUTH_TOKEN = "";
+  try { localStorage.removeItem(AUTH_KEY); } catch (_) {}
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  document.getElementById("lockScreen").classList.add("show");
+  document.getElementById("lockMsg").textContent = msg || "";
+  const pw = document.getElementById("lockPw"); pw.value = ""; setTimeout(() => pw.focus(), 60);
+}
+function unlockWith(token) {
+  AUTH_TOKEN = token;
+  try { localStorage.setItem(AUTH_KEY, token); } catch (_) {}
+  document.getElementById("lockScreen").classList.remove("show");
+  loadData();
+  if (!pollTimer) pollTimer = setInterval(loadData, 20000);
+}
+function tryUnlock(pw) {
+  const m = document.getElementById("lockMsg");
+  if (!pw) { m.textContent = "Enter the password."; return; }
+  if (sha256hex(pw) === EXPECTED_HASH) { m.textContent = ""; unlockWith(EXPECTED_HASH); }
+  else { m.textContent = "❌ Wrong password."; document.getElementById("lockPw").value = ""; }
+}
+document.getElementById("lockGo").addEventListener("click", () => tryUnlock(document.getElementById("lockPw").value));
+document.getElementById("lockPw").addEventListener("keydown", e => { if (e.key === "Enter") tryUnlock(e.target.value); });
+document.getElementById("lockBtn").addEventListener("click", () => lockNow("Locked."));
+
+/* ── Init: reuse a saved token (unlocking the HIT Tracker unlocks this too) ── */
+(function init() {
+  let saved = null; try { saved = localStorage.getItem(AUTH_KEY); } catch (_) {}
+  if (saved === EXPECTED_HASH) unlockWith(saved);
+  else lockNow("");
+})();
+</script>
+</body>
+</html>

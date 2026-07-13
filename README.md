@@ -1,19 +1,22 @@
-# Panda Commander + MTurk HIT Tracker
+# Panda Commander + MTurk HIT Tracker + Payment Management
 
-One server powers **both**:
+One server powers **all three**:
 
 1. **Panda Commander** — team command/control for RDP scripts (`/teams`, `/whoami`, `/workers` …)
 2. **HIT Monitor** — real-time + full-history HIT tracking, with a single source
    of truth so **every device (PC, phone, any browser) shows the same data.**
+3. **Payment Management** — team earnings dashboard (replaces the Firebase
+   `earnings_logs` page), fed by the same server.
 
 ## Files
 
 | File | What it is | Where it runs |
 |------|------------|---------------|
-| `server.js` | **The combined Panda Commander + HIT Monitor server.** Stores all team state **and** all HIT history in `data/state.json`, and streams live updates. | Your server (`38.58.179.188`) |
-| `index.html` | **Control Center** — the unified entry page served at `/`. Two side-by-side tabs (📡 HIT Tracker / 🐼 Panda Commander) that show each app in its own isolated frame. | Any browser, at `/` |
+| `server.js` | **The combined server** (Panda Commander + HIT Monitor + Payments). Stores everything in `data/state.json`. | Your server (`38.58.179.188`) |
+| `index.html` | **Control Center** — the unified entry page served at `/`. Three tabs (📡 HIT Tracker / 🐼 Panda Commander / 💰 Payments), each app in its own isolated frame. | Any browser, at `/` |
 | `dashboard.html` | The live + history HIT dashboard UI. Reads everything from the server. | In a tab, or directly at `/dashboard.html` |
 | `panda_commander.html` | The Panda Commander control UI. | In a tab, or directly at `/panda_commander.html` |
+| `payments.html` | The Payment Management UI — team earnings, expandable per-team logs, CSV export. Locked by the same master password (one unlock covers HIT Tracker + Payments). | In a tab, or directly at `/payments.html` |
 | `Hit_Monitor.user.js` | Tampermonkey userscript that detects HITs on `worker.mturk.com` and reports them to the server. | Each worker's browser |
 
 > ⚠️ **Do NOT replace `server.js` with a HIT-only server** — it must keep the
@@ -102,6 +105,31 @@ DELETE /hits.json?token=…    → wipe all HITs                    [token]
 `[token]` = requires `?token=<sha256(password)>` (or `x-admin-token` header).
 Panda Commander endpoints (`/teams/:team.json`, `/whoami`, `/workers.json`,
 `/teams.json`, `/health`) are unchanged and need no token.
+
+Deletes are remembered (**tombstones**): a wiped/deleted HIT id can never be
+re-added by a later script post or browser re-upload — but brand-new HITs keep
+tracking normally. In the dashboard's 🗑 Delete Team dialog, the
+**"🧹 ALL TEAMS — wipe the entire history"** option erases everything everywhere
+(password required).
+
+## Payments endpoints (reference)
+
+```
+POST   /earnings/:id         → upsert one earnings log (open — scripts post here)
+POST   /earnings             → same; id from body ("WORKER ID" / workerId / id)
+GET    /earnings.json        → all logs                    [token]
+DELETE /earnings/:id         → remove one log              [token]
+DELETE /earnings.json        → wipe all earnings history   [token]
+```
+
+Scripts can keep the exact Firebase field names they already send: `TEAM`,
+`USERNAME`, `"WORKER ID"`, `"SERVER IP"`, `currentEarnings`, `lastMonthEarnings`,
+`lastTransferAmount`, `lastTransferDate`, `nextTransferDate`, `bankAccount`,
+`ip`, `alert`, `timestamp`. Instead of writing to Firebase `earnings_logs`, POST
+the same JSON to `http://38.58.179.188:3000/earnings`.
+
+The Payments page shows **every Panda Commander team** (from `/teams.json`) even
+before any earnings are reported — team names stay, history starts clean.
 
 ## Dashboard views
 

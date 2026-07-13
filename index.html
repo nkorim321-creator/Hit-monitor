@@ -126,6 +126,7 @@ body{
     <span class="tab-ind" id="ind"></span>
     <button class="tab active" type="button" data-target="dash"><span class="em">📡</span><span>HIT Tracker</span></button>
     <button class="tab" type="button" data-target="panda"><span class="em">🐼</span><span>Panda Commander</span></button>
+    <button class="tab" type="button" data-target="pay"><span class="em">💰</span><span>Payments</span></button>
   </div>
 
   <a class="ext spacer" id="openExt" href="/dashboard.html" target="_blank" rel="noopener" title="Open the current view in a new browser tab">↗ New tab</a>
@@ -135,6 +136,7 @@ body{
   <div class="boot" id="boot"><div class="ring"></div><div>Loading…</div></div>
   <iframe id="frame-dash"  data-src="/dashboard.html"        title="MTurk HIT Tracker"></iframe>
   <iframe id="frame-panda" data-src="/panda_commander.html"  title="Panda Commander"></iframe>
+  <iframe id="frame-pay"   data-src="/payments.html"         title="Payment Management"></iframe>
 </div>
 
 <script>
@@ -144,8 +146,8 @@ body{
   var ind    = document.getElementById("ind");
   var boot   = document.getElementById("boot");
   var openEx = document.getElementById("openExt");
-  var frames = { dash: document.getElementById("frame-dash"), panda: document.getElementById("frame-panda") };
-  var paths  = { dash: "/dashboard.html", panda: "/panda_commander.html" };
+  var frames = { dash: document.getElementById("frame-dash"), panda: document.getElementById("frame-panda"), pay: document.getElementById("frame-pay") };
+  var paths  = { dash: "/dashboard.html", panda: "/panda_commander.html", pay: "/payments.html" };
   var loaded = {};
 
   /* localStorage may be blocked (private mode) — fail soft */
@@ -153,7 +155,7 @@ body{
   function lsSet(k,v){ try { localStorage.setItem(k,v); } catch (_) {} }
 
   var current = lsGet("cc_tab");
-  if (current !== "dash" && current !== "panda") current = "dash";
+  if (current !== "dash" && current !== "panda" && current !== "pay") current = "dash";
 
   function ensureLoaded(key){
     if (loaded[key]) return;
