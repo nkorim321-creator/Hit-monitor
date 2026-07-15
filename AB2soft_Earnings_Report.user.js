@@ -308,7 +308,7 @@
   } else if (data.isGiftCard) {
     alert = 'OK';                             // gift card has no bank last-3 → not a mismatch
   } else if (sheetLast3 && data.transferLast3 && data.transferLast3 !== sheetLast3) {
-    alert = `WRONG BANK (need ${sheetLast3})`;
+    alert = 'WRONG BANK';
   }
 
   // Build the payload — ONLY the fields the Payments page shows. We deliberately

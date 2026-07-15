@@ -69,7 +69,7 @@ body {
 }
 .summary-row { cursor: pointer; border-bottom: 1px solid var(--card-border); background: var(--card-bg); }
 .summary-row:hover { background: #1e293b; }
-.summary-row td { padding: 20px 24px; font-size: 18px; font-weight: 800; color: var(--success-neon); }
+.summary-row td { padding: 18px 20px; font-size: 14px; font-weight: 800; color: var(--success-neon); }
 .summary-row td:first-child { color: #ffffff; }
 .team-name { display: flex; align-items: center; gap: 12px; }
 .chevron { width: 18px; height: 18px; color: var(--accent-blue); transition: transform 0.3s ease; flex-shrink: 0; }
@@ -98,7 +98,7 @@ body {
   word-break: break-word;
 }
 .inner-table td {
-  padding: 11px 9px; font-size: 13px !important; font-weight: 800 !important;
+  padding: 12px 9px; font-size: 14px !important; font-weight: 800 !important;
   color: var(--success-neon) !important; border-bottom: 1px solid rgba(255,255,255,0.05);
   vertical-align: middle; letter-spacing: 0.2px;
   white-space: normal; word-break: break-word; overflow-wrap: anywhere;
@@ -106,9 +106,11 @@ body {
 .inner-table tr:hover td { background: rgba(255, 255, 255, 0.04); }
 /* WRONG BANK / UPDATE BANK alert — override the green with red so it stands out */
 .alert-bad { color: #ff4d6a !important; font-weight: 900 !important; }
-@media (max-width: 900px) {
-  .inner-table th { font-size: 11px; padding: 9px 6px; }
-  .inner-table td { font-size: 12px !important; padding: 9px 6px; }
+/* Only shrink the detail cells on genuinely small screens so it always fits;
+   at desktop / windowed sizes the summary and detail fonts stay the same. */
+@media (max-width: 680px) {
+  .inner-table th { font-size: 11px; padding: 8px 5px; }
+  .inner-table td { font-size: 12px !important; padding: 8px 5px; }
 }
 .inner-table tr:last-child td { border-bottom: none; }
 .no-logs { padding: 22px; color: var(--muted); font-size: 14px; font-weight: 500; }
