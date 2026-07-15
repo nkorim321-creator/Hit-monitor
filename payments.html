@@ -19,38 +19,46 @@
   --muted: #94a3b8;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { max-width: 100%; overflow-x: hidden; }   /* never let the whole page scroll sideways */
 body {
   font-family: 'Outfit', sans-serif;
   background-color: var(--bg-base);
-  padding: 30px 15px;
+  padding: 20px 14px 40px;
   -webkit-font-smoothing: antialiased;
 }
-.container { max-width: 98%; margin: 0 auto; }
+.container { width: 100%; max-width: 100%; margin: 0 auto; }
 
-/* ========================= HEADER ========================= */
+/* ========================= HEADER (fully responsive) ========================= */
 .dashboard-header {
   display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 25px; background: var(--card-bg);
-  padding: 16px 24px; border-radius: 12px; border: 1px solid var(--card-border);
+  margin-bottom: 20px; background: var(--card-bg);
+  padding: 14px 18px; border-radius: 12px; border: 1px solid var(--card-border);
   gap: 12px; flex-wrap: wrap;
 }
-.page-title { font-size: 22px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 12px; }
+.page-title { font-size: 20px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .page-title span { color: var(--accent-blue); }
-.header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1 1 auto; justify-content: flex-end; }
 .grand-total {
   background: rgba(58, 222, 130, 0.08); border: 1px solid rgba(58, 222, 130, 0.2);
-  color: var(--success-neon); padding: 8px 16px; border-radius: 8px;
-  font-size: 18px; font-weight: 800;
+  color: var(--success-neon); padding: 8px 14px; border-radius: 8px;
+  font-size: 16px; font-weight: 800; white-space: nowrap;
 }
 .btn-export-all, .btn-hdr {
   background: var(--accent-blue); color: white; border: none;
-  padding: 10px 18px; border-radius: 8px; cursor: pointer;
-  font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 14px;
+  padding: 9px 14px; border-radius: 8px; cursor: pointer;
+  font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 13px; white-space: nowrap;
 }
 .btn-export-all:hover { background: #006bce; }
 .btn-hdr.ghost { background: #1e293b; color: #cbd5e1; border: 1px solid var(--card-border); }
 .btn-hdr.ghost:hover { background: #273449; color: #fff; }
-#syncNote { color: var(--muted); font-size: 12px; font-weight: 500; }
+#syncNote { color: var(--muted); font-size: 12px; font-weight: 500; flex-basis: 100%; text-align: right; }
+@media (max-width: 760px) {
+  .dashboard-header { flex-direction: column; align-items: stretch; }
+  .header-actions { justify-content: flex-start; }
+  .grand-total { flex: 1 1 auto; text-align: center; }
+  .btn-export-all, .btn-hdr { flex: 1 1 auto; text-align: center; }
+  #syncNote { text-align: left; }
+}
 
 /* ========================= MAIN TABLE ========================= */
 .table-container { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--card-border); overflow: hidden; }
@@ -286,6 +294,22 @@ let grouped = {};        // team → { rows, totalEarnings }
 let allRows = [];
 const openTeams = new Set();
 let pollTimer = null;
+let sse = null, sseRetry = 2000, reloadT = null;
+
+/* Debounced reload (SSE can fire many events at once) */
+function scheduleReload() { if (reloadT) return; reloadT = setTimeout(() => { reloadT = null; loadData(); }, 250); }
+
+/* ── Live stream: instant updates the moment a worker's /earnings page posts ── */
+function startSSE() {
+  if (!AUTH_TOKEN) return;
+  try { sse && sse.close(); } catch (_) {}
+  sse = new EventSource(api("/earnings/stream"));
+  sse.addEventListener("ready", () => { sseRetry = 2000; });
+  sse.addEventListener("earning-update", () => scheduleReload());
+  sse.onerror = () => {
+    setTimeout(() => { if (AUTH_TOKEN && (!sse || sse.readyState === 2)) { sseRetry = Math.min(sseRetry * 1.5, 30000); startSSE(); } }, sseRetry);
+  };
+}
 
 /* ── Data engine: team names from /teams.json ∪ earnings from /earnings.json.
    Each source is fetched independently so a missing endpoint (old server) still
@@ -447,6 +471,7 @@ document.getElementById("refreshBtn").addEventListener("click", loadData);
 function lockNow(msg) {
   AUTH_TOKEN = "";
   try { localStorage.removeItem(AUTH_KEY); } catch (_) {}
+  try { sse && sse.close(); } catch (_) {} sse = null;
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   document.getElementById("lockScreen").classList.add("show");
   document.getElementById("lockMsg").textContent = msg || "";
@@ -457,7 +482,8 @@ function unlockWith(token) {
   try { localStorage.setItem(AUTH_KEY, token); } catch (_) {}
   document.getElementById("lockScreen").classList.remove("show");
   loadData();
-  if (!pollTimer) pollTimer = setInterval(loadData, 20000);
+  startSSE();                                              // instant live updates
+  if (!pollTimer) pollTimer = setInterval(loadData, 20000); // safety-net poll
 }
 function tryUnlock(pw) {
   const m = document.getElementById("lockMsg");

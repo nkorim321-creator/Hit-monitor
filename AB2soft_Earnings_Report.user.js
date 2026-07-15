@@ -188,25 +188,22 @@
     const { bankAccount, nextTransferDate } = extractNextTransferInfo();
     const ip = await fetchPublicIP();
 
-    let finalBankAccount = bankAccount;
-    let finalCurrentEarnings = currentEarnings;
-    let finalLastMonthEarnings = lastMonthEarnings;
+    // Transfer method: mark "UPDATE BANK" only when the latest transfer failed.
+    let finalBankAccount = updateBankFlag ? 'UPDATE BANK' : bankAccount;
 
-    if (updateBankFlag) {
-      finalBankAccount = 'UPDATE BANK';
-    } else if (noPrevMonthFlag) {
-      // no transfers in the previous month → keep last-transfer fields, zero the rest
-      finalCurrentEarnings = '0.00';
-      finalLastMonthEarnings = '0.00';
-    }
-
+    // NOTE: currentEarnings is ALWAYS the real value shown on the page (we no
+    // longer zero it when there were no previous-month transfers — that made
+    // the dashboard show $0.00 while MTurk showed the real amount).
+    // lastMonthEarnings is naturally 0.00 when there were no prev-month
+    // transfers, straight from computeLastMonthEarnings — no special-casing.
     return {
       workerId, userName,
-      currentEarnings: finalCurrentEarnings,
+      currentEarnings,
       lastTransferAmount, lastTransferDate, nextTransferDate,
       bankAccount: finalBankAccount, ip,
-      lastMonthEarnings: finalLastMonthEarnings,
-      _updateBankFlag: updateBankFlag
+      lastMonthEarnings,
+      _updateBankFlag: updateBankFlag,
+      _noPrevMonthFlag: noPrevMonthFlag
     };
   }
 
@@ -248,11 +245,12 @@
   const data = await extractData();
   if (!data.workerId) { toast('⚠️ No Worker ID found on this page.'); return; }
 
-  // Once per day (Bangladesh time)
-  const todayKey  = `lastSync_${data.workerId}`;
-  const lastSync  = await GM_getValue(todayKey, '');
-  const todayDate = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
-  if (lastSync === todayDate) { toast('✅ Already synced today — skipping'); return; }
+  // INSTANT UPDATE: upload every time the /earnings page is opened (no once-per-day
+  // skip) so the Payment dashboard always shows up-to-date current earnings. A
+  // tiny guard only prevents a duplicate post on rapid double-refresh.
+  const guardKey = `lastPost_${data.workerId}`;
+  const lastPost = parseInt(await GM_getValue(guardKey, '0'), 10) || 0;
+  if (Date.now() - lastPost < 8000) { return; }   // posted <8s ago → skip the dupe
 
   // Only allow workers whose TEAM is in the sheet
   const sheetMap  = await loadSheetFullMap();
@@ -280,7 +278,7 @@
   try {
     const status = await gmPost(`${SERVER_URL}/earnings/${encodeURIComponent(data.workerId)}`, payload);
     if (status >= 200 && status < 300) {
-      await GM_setValue(todayKey, todayDate);
+      await GM_setValue(guardKey, String(Date.now()));
       toast(`✅ Synced ${data.workerId} (${teamName}) → server`);
       console.log('[AB2soft] Synced', data.workerId, payload);
     } else {

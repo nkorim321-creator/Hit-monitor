@@ -159,7 +159,7 @@ app.get('/health', (req, res) => {
 // Open this in a browser (http://<server-ip>:3000/version). If it lists
 // "earnings" and "tombstones", the NEW server is running. If you get 404,
 // the OLD server.js is still running — replace it and restart.
-const SERVER_VERSION = 'panda+hits+payments-2';
+const SERVER_VERSION = 'panda+hits+payments-3';
 app.get('/version', (req, res) => {
     res.json({
         version: SERVER_VERSION,
@@ -493,6 +493,13 @@ app.delete('/hits.json', (req, res) => {
 // lastTransferAmount, lastTransferDate, nextTransferDate, bankAccount, ip,
 // alert, timestamp — the payments page understands them as-is.
 
+// Live push to open Payment dashboards (instant, no waiting for the poll)
+const earningSubscribers = new Set();
+function broadcastEarning(payload) {
+    const msg = `event: earning-update\ndata: ${JSON.stringify(payload)}\n\n`;
+    for (const res of earningSubscribers) { try { res.write(msg); } catch (_) {} }
+}
+
 function upsertEarning(id, body) {
     const existing = state.earnings[id] || {};
     const merged = { ...existing };
@@ -515,6 +522,7 @@ app.post('/earnings/:id', (req, res) => {
     if (!body || typeof body !== 'object') return res.status(400).json({ error: 'Body must be a JSON object' });
     const merged = upsertEarning(id, body);
     saveState();
+    broadcastEarning(merged);
     res.json(merged);
 });
 
@@ -525,12 +533,29 @@ app.post('/earnings', (req, res) => {
                       ('log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)));
     const merged = upsertEarning(id, body);
     saveState();
+    broadcastEarning(merged);
     res.json(merged);
 });
 
 app.get('/earnings.json', (req, res) => {
     if (!isAuthed(req)) return res.status(401).json({ error: 'unauthorized' });
     res.json(Object.values(state.earnings));
+});
+
+// SSE live feed for the Payment dashboard
+app.get('/earnings/stream', (req, res) => {
+    if (!isAuthed(req)) return res.status(401).json({ error: 'unauthorized' });
+    res.set({
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+    });
+    res.flushHeaders();
+    res.write(`event: ready\ndata: {"ok":true}\n\n`);
+    earningSubscribers.add(res);
+    const hb = setInterval(() => { try { res.write(`: heartbeat\n\n`); } catch (_) {} }, 25000);
+    req.on('close', () => { clearInterval(hb); earningSubscribers.delete(res); });
 });
 
 app.delete('/earnings/:id', (req, res) => {
