@@ -18,7 +18,13 @@ One server powers **all three**:
 | `panda_commander.html` | The Panda Commander control UI. | In a tab, or directly at `/panda_commander.html` |
 | `payments.html` | The Payment Management UI — team earnings, expandable per-team logs, CSV export. Locked by the same master password (one unlock covers HIT Tracker + Payments). | In a tab, or directly at `/payments.html` |
 | `Hit_Monitor.user.js` | Tampermonkey userscript that detects HITs on `worker.mturk.com` and reports them to the server. | Each worker's browser |
-| `AB2soft_Earnings_Report.user.js` | Tampermonkey userscript that reads the MTurk **/earnings** page and posts each worker's earnings to the server (`POST /earnings`). Replaces the old Firebase version; only uploads workers whose `TEAM` is in the Google Sheet, once per day. | Each worker's browser |
+| `AB2soft_Earnings_Report.user.js` | Tampermonkey userscript that reads the MTurk **/earnings** page and posts each worker's earnings to the server (`POST /earnings`) on **every visit** (instant). Only uploads workers whose `TEAM` is in the team sheet. Also compares the page's transfer-method last-3 digits with the worker's assigned bank number (from a second, bank sheet) and sends **`WRONG BANK`** in the alert on a mismatch. | Each worker's browser |
+
+> 🔐 **Bank check is done in the userscript, on the worker's own machine.** Only
+> the last 3 digits are read and only the result (`OK` / `WRONG BANK`) is sent —
+> the full bank number, password, email and 2FA in that sheet **never** reach the
+> server or the dashboard. (That sheet still holds secrets, so keep its sharing
+> tight.) The Payments **ALERT** column turns red for `WRONG BANK` / `UPDATE BANK`.
 
 > **Is the right server running?** Open `http://<server-ip>:3000/version`. If it
 > returns JSON listing `"earnings"` and `"tombstones"`, the new server is live.

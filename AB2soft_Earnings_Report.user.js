@@ -23,11 +23,17 @@
   // Your server (same one that runs Panda Commander + HIT Tracker + Payments)
   const SERVER_URL = 'http://38.58.179.188:3000';
 
-  // Google Sheet with TEAM / WORKER ID / USERNAME / SERVER IP columns.
+  // Google Sheet with TEAM / WORKER ID / USERNAME / SERVER IP columns (team gating).
   const SHEET_CSV =
     'https://docs.google.com/spreadsheets/d/1bNFhVCn5kEQ-dmXra0DpazfAk7DxTKF5f99u1BIv3FM/export?format=csv&gid=0';
 
-  // If the latest transfer failed → mark the transfer method as "UPDATE BANK".
+  // Google Sheet holding each worker's assigned BANK NUBMER (17-digit). We only
+  // read the last 3 digits from it to compare with the transfer method shown on
+  // the page — the bank number / password / email NEVER leave this machine.
+  const BANK_SHEET_CSV =
+    'https://docs.google.com/spreadsheets/d/1yVteJGLxlZPRFPhzbzdfW2FXBn7pEQX3C3uI03KlAtA/export?format=csv&gid=0';
+
+  // If the latest transfer failed → alert "UPDATE BANK".
   const ENABLE_UPDATE_BANK_LOGIC = true;
 
   /* ────────────────────────────── HELPERS ────────────────────────────── */
@@ -188,20 +194,22 @@
     const { bankAccount, nextTransferDate } = extractNextTransferInfo();
     const ip = await fetchPublicIP();
 
-    // Transfer method: mark "UPDATE BANK" only when the latest transfer failed.
-    let finalBankAccount = updateBankFlag ? 'UPDATE BANK' : bankAccount;
+    // Keep the REAL transfer method (e.g. "x615" / "Amazon Gift Card"). The last
+    // 3 digits of a bank method are what we compare to the sheet. Gift cards have
+    // no digits → transferLast3 is empty.
+    const isGiftCard = /gift\s*card/i.test(bankAccount);
+    const trailDigits = (String(bankAccount).match(/(\d+)\s*$/) || [])[1] || '';
+    const transferLast3 = isGiftCard ? '' : trailDigits.slice(-3);
 
-    // NOTE: currentEarnings is ALWAYS the real value shown on the page (we no
-    // longer zero it when there were no previous-month transfers — that made
-    // the dashboard show $0.00 while MTurk showed the real amount).
-    // lastMonthEarnings is naturally 0.00 when there were no prev-month
-    // transfers, straight from computeLastMonthEarnings — no special-casing.
+    // NOTE: currentEarnings is ALWAYS the real value shown on the page.
+    // lastMonthEarnings is naturally 0.00 when there were no prev-month transfers.
     return {
       workerId, userName,
       currentEarnings,
       lastTransferAmount, lastTransferDate, nextTransferDate,
-      bankAccount: finalBankAccount, ip,
+      bankAccount, ip,
       lastMonthEarnings,
+      isGiftCard, transferLast3,
       _updateBankFlag: updateBankFlag,
       _noPrevMonthFlag: noPrevMonthFlag
     };
@@ -241,6 +249,33 @@
     return map;
   }
 
+  // Load ONLY the last-3 digits of each worker's assigned bank number.
+  // Returns { byWorker: {workerId: last3}, byUser: {username: last3} }.
+  // The full bank number / password / email never leave this function.
+  async function loadBankLast3() {
+    const byWorker = {}, byUser = {};
+    try {
+      const rows = parseCSV(await gmGet(BANK_SHEET_CSV + '&_=' + Date.now()));
+      if (!rows.length) return { byWorker, byUser };
+      const headers = rows.shift().map(h => h.replace(/^﻿/, '').trim());
+      const widIdx  = headers.findIndex(h => /worker.?id/i.test(h));
+      const userIdx = headers.findIndex(h => /user.?name/i.test(h));
+      // "BANK NUBMER" (note the sheet's spelling) — any header with "bank", not "routing"
+      const bankIdx = headers.findIndex(h => /bank/i.test(h) && !/rout/i.test(h));
+      if (bankIdx < 0) return { byWorker, byUser };
+      for (const row of rows) {
+        const digits = String(row[bankIdx] || '').replace(/\D/g, '');
+        if (digits.length < 3) continue;
+        const last3 = digits.slice(-3);
+        const wid  = widIdx  >= 0 ? String(row[widIdx]  || '').replace(/^﻿/, '').trim() : '';
+        const user = userIdx >= 0 ? String(row[userIdx] || '').trim() : '';
+        if (wid)  byWorker[wid] = last3;
+        if (user) byUser[user]  = last3;
+      }
+    } catch (e) { console.warn("⚠️ Bank sheet load error", e); }
+    return { byWorker, byUser };
+  }
+
   /* ────────────────────────────── MAIN ────────────────────────────── */
   const data = await extractData();
   if (!data.workerId) { toast('⚠️ No Worker ID found on this page.'); return; }
@@ -258,12 +293,32 @@
   const teamName  = (extraInfo["TEAM"] || extraInfo["Team"] || '').trim();
   if (!teamName) { toast('⛔ Skipped — Worker/Team not in the Google Sheet'); return; }
 
-  // Build the payload with the exact field names the Payments page reads.
+  const userName = (extraInfo["USERNAME"] || extraInfo["Username"] || data.userName || '').trim();
+
+  // ── BANK MATCH: compare the page's transfer-method last-3 with the assigned
+  //    bank number's last-3 from the bank sheet. Mismatch → "WRONG BANK". ──
+  // Always a non-empty value ('OK' when fine) so a previously-set WRONG BANK
+  // clears once the worker fixes it (the server skips empty updates).
+  let alert = 'OK';
+  const bank = await loadBankLast3();
+  const sheetLast3 = bank.byWorker[data.workerId] || (userName ? bank.byUser[userName] : '') || '';
+
+  if (data._updateBankFlag) {
+    alert = 'UPDATE BANK';                    // latest transfer failed → highest priority
+  } else if (data.isGiftCard) {
+    alert = 'OK';                             // gift card has no bank last-3 → not a mismatch
+  } else if (sheetLast3 && data.transferLast3 && data.transferLast3 !== sheetLast3) {
+    alert = `WRONG BANK (need ${sheetLast3})`;
+  }
+
+  // Build the payload — ONLY the fields the Payments page shows. We deliberately
+  // do NOT spread the sheet rows, so bank numbers / passwords / emails never
+  // reach the server.
   const payload = {
-    ...extraInfo,                                   // TEAM, USERNAME, WORKER ID, SERVER IP … from the sheet
     "TEAM": teamName,
-    "WORKER ID": extraInfo["WORKER ID"] || data.workerId,
-    "USERNAME": extraInfo["USERNAME"] || data.userName || '',
+    "USERNAME": userName,
+    "WORKER ID": data.workerId,
+    "SERVER IP": (extraInfo["SERVER IP"] || extraInfo["Server IP"] || '').trim(),
     currentEarnings:   data.currentEarnings,
     lastMonthEarnings: data.lastMonthEarnings,
     lastTransferAmount: data.lastTransferAmount,
@@ -271,7 +326,7 @@
     nextTransferDate:  data.nextTransferDate,
     bankAccount:       data.bankAccount,
     ip:                data.ip,
-    alert:             data._updateBankFlag ? 'UPDATE BANK' : '',
+    alert:             alert,
     timestamp:         new Date().toISOString()
   };
 

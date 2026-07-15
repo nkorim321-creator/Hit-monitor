@@ -87,18 +87,29 @@ body {
   border-radius: 4px; cursor: pointer; font-family: 'Outfit', sans-serif; font-size: 13px; font-weight: 700;
 }
 .btn-sm:hover { background: #e2e8f0; }
-.inner-table-wrapper { background: #111827; border-radius: 6px; border: 1px solid var(--card-border); width: 100%; overflow-x: auto; }
-.inner-table { width: 100%; border-collapse: collapse; min-width: 1600px; }
+/* The detail table fits the screen (no forced 1600px width). All 13 columns
+   stay visible at any width by wrapping their text; a tiny screen still gets a
+   horizontal scrollbar as a last resort. */
+.inner-table-wrapper { background: #111827; border-radius: 6px; border: 1px solid var(--card-border); width: 100%; max-width: 100%; overflow-x: auto; }
+.inner-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .inner-table th {
-  background: var(--accent-blue); color: #fff; padding: 16px 14px;
-  font-size: 14px; font-weight: 800; text-align: left; text-transform: uppercase;
+  background: var(--accent-blue); color: #fff; padding: 11px 9px;
+  font-size: 12px; font-weight: 800; text-align: left; text-transform: uppercase;
+  word-break: break-word;
 }
 .inner-table td {
-  padding: 18px 14px; font-size: 16px !important; font-weight: 800 !important;
+  padding: 11px 9px; font-size: 13px !important; font-weight: 800 !important;
   color: var(--success-neon) !important; border-bottom: 1px solid rgba(255,255,255,0.05);
-  white-space: nowrap; vertical-align: middle; letter-spacing: 0.5px;
+  vertical-align: middle; letter-spacing: 0.2px;
+  white-space: normal; word-break: break-word; overflow-wrap: anywhere;
 }
 .inner-table tr:hover td { background: rgba(255, 255, 255, 0.04); }
+/* WRONG BANK / UPDATE BANK alert — override the green with red so it stands out */
+.alert-bad { color: #ff4d6a !important; font-weight: 900 !important; }
+@media (max-width: 900px) {
+  .inner-table th { font-size: 11px; padding: 9px 6px; }
+  .inner-table td { font-size: 12px !important; padding: 9px 6px; }
+}
 .inner-table tr:last-child td { border-bottom: none; }
 .no-logs { padding: 22px; color: var(--muted); font-size: 14px; font-weight: 500; }
 
@@ -413,12 +424,12 @@ function render(offline) {
                 <th>IP</th><th>ALERT</th><th>TIMESTAMP (BD)</th>
               </tr></thead><tbody>`;
       g.rows.forEach(r => {
-        const isAlert = r.alert && r.alert.length > 0 && r.alert !== "✔ OK";
+        const isAlert = r.alert && !/^(ok|✔\s*ok|✔️\s*ok)$/i.test(String(r.alert).trim());
         html += `<tr>
           <td>${x(r.serverIp)}</td><td>${x(r.team)}</td><td>${x(r.username)}</td><td>${x(r.workerId)}</td>
           <td>${x(r.currentEarningsStr)}</td><td>${x(r.lastMonthStr)}</td><td>${x(r.lastTransferStr)}</td>
           <td>${x(r.lastTransferDate)}</td><td>${x(r.nextTransferDate)}</td><td>${x(r.transferMethod)}</td>
-          <td>${x(r.ip)}</td><td>${isAlert ? "⚠️ " + x(r.alert) : "✔️ OK"}</td>
+          <td>${x(r.ip)}</td><td>${isAlert ? `<span class="alert-bad">⚠️ ${x(r.alert)}</span>` : "✔️ OK"}</td>
           <td>${x(r.dateStr)}, ${x(r.timeStr)}</td>
         </tr>`;
       });
