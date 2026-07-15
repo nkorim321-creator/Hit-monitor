@@ -25,6 +25,10 @@ One server powers **all three**:
 > the full bank number, password, email and 2FA in that sheet **never** reach the
 > server or the dashboard. (That sheet still holds secrets, so keep its sharing
 > tight.) The Payments **ALERT** column turns red for `WRONG BANK` / `UPDATE BANK`.
+>
+> The team overview also has a **BANK STATUS** column: **✅ ALL OK** (green) when
+> every worker's bank matches, or a red **🚨 N WRONG BANK** count so you can spot
+> the problem team at a glance ("—" = no earnings reported yet). It updates live.
 
 > **Is the right server running?** Open `http://<server-ip>:3000/version`. If it
 > returns JSON listing `"earnings"` and `"tombstones"`, the new server is live.

@@ -69,7 +69,7 @@ body {
 }
 .summary-row { cursor: pointer; border-bottom: 1px solid var(--card-border); background: var(--card-bg); }
 .summary-row:hover { background: #1e293b; }
-.summary-row td { padding: 18px 20px; font-size: 14px; font-weight: 800; color: var(--success-neon); }
+.summary-row td { padding: 18px 20px; font-size: 18px; font-weight: 800; color: var(--success-neon); }
 .summary-row td:first-child { color: #ffffff; }
 .team-name { display: flex; align-items: center; gap: 12px; }
 .chevron { width: 18px; height: 18px; color: var(--accent-blue); transition: transform 0.3s ease; flex-shrink: 0; }
@@ -98,7 +98,7 @@ body {
   word-break: break-word;
 }
 .inner-table td {
-  padding: 12px 9px; font-size: 14px !important; font-weight: 800 !important;
+  padding: 12px 9px; font-size: 18px !important; font-weight: 800 !important;
   color: var(--success-neon) !important; border-bottom: 1px solid rgba(255,255,255,0.05);
   vertical-align: middle; letter-spacing: 0.2px;
   white-space: normal; word-break: break-word; overflow-wrap: anywhere;
@@ -106,6 +106,9 @@ body {
 .inner-table tr:hover td { background: rgba(255, 255, 255, 0.04); }
 /* WRONG BANK / UPDATE BANK alert — override the green with red so it stands out */
 .alert-bad { color: #ff4d6a !important; font-weight: 900 !important; }
+/* BANK STATUS summary column: green ALL OK / red wrong-bank count / muted dash */
+.bank-ok { color: var(--success-neon); font-weight: 900; }
+.bank-none { color: var(--muted); font-weight: 600; }
 /* Only shrink the detail cells on genuinely small screens so it always fits;
    at desktop / windowed sizes the summary and detail fonts stay the same. */
 @media (max-width: 680px) {
@@ -183,13 +186,14 @@ body {
     <table id="mainTable">
       <thead class="main-thead">
         <tr>
-          <th style="width: 35%;">Team Group</th>
-          <th style="width: 30%;">Active Workers</th>
-          <th style="width: 35%;">Total Generated ($)</th>
+          <th style="width: 30%;">Team Group</th>
+          <th style="width: 20%;">Active Workers</th>
+          <th style="width: 26%;">Total Generated ($)</th>
+          <th style="width: 24%;">Bank Status</th>
         </tr>
       </thead>
       <tbody id="tableBody">
-        <tr><td colspan="3" class="empty-note">⏳ Loading…</td></tr>
+        <tr><td colspan="4" class="empty-note">⏳ Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -384,17 +388,26 @@ function render(offline) {
   const body = document.getElementById("tableBody");
   const teams = Object.keys(grouped).sort();
   if (!teams.length) {
-    body.innerHTML = `<tr><td colspan="3" class="empty-note">${offline
+    body.innerHTML = `<tr><td colspan="4" class="empty-note">${offline
       ? "⚠️ Server not reachable. Start the server, then press 🔄 Refresh."
       : "No teams yet — teams appear here automatically from Panda Commander,\nand earnings rows appear as your scripts report them."}</td></tr>`;
     return;
   }
+
+  // any alert that is not plain OK (WRONG BANK, UPDATE BANK, …) counts as bad
+  const badAlert = a => !!a && !/^(ok|✔\s*ok|✔️\s*ok)$/i.test(String(a).trim());
 
   let html = "";
   teams.forEach(team => {
     const safeId = team.replace(/[^a-zA-Z0-9]/g, "_");
     const g = grouped[team];
     const isOpen = openTeams.has(safeId);
+    const wrongCount = g.rows.filter(r => badAlert(r.alert)).length;
+    const bankStatus = !g.rows.length
+      ? `<span class="bank-none">—</span>`
+      : (wrongCount
+          ? `<span class="alert-bad">🚨 ${wrongCount} WRONG BANK</span>`
+          : `<span class="bank-ok">✅ ALL OK</span>`);
 
     html += `
       <tr class="summary-row" data-toggle="${x(safeId)}">
@@ -404,9 +417,10 @@ function render(offline) {
         </div></td>
         <td>${g.rows.length}</td>
         <td>$${g.totalEarnings.toFixed(2)}</td>
+        <td>${bankStatus}</td>
       </tr>
       <tr id="child-${x(safeId)}" class="child-row ${isOpen ? "active" : ""}">
-        <td colspan="3" style="padding:0;">
+        <td colspan="4" style="padding:0;">
           <div class="child-container">
             <div class="team-actions">
               <h3>Detailed Logs: ${x(team)}</h3>
@@ -426,7 +440,7 @@ function render(offline) {
                 <th>IP</th><th>ALERT</th><th>TIMESTAMP (BD)</th>
               </tr></thead><tbody>`;
       g.rows.forEach(r => {
-        const isAlert = r.alert && !/^(ok|✔\s*ok|✔️\s*ok)$/i.test(String(r.alert).trim());
+        const isAlert = badAlert(r.alert);
         html += `<tr>
           <td>${x(r.serverIp)}</td><td>${x(r.team)}</td><td>${x(r.username)}</td><td>${x(r.workerId)}</td>
           <td>${x(r.currentEarningsStr)}</td><td>${x(r.lastMonthStr)}</td><td>${x(r.lastTransferStr)}</td>
