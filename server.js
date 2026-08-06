@@ -43,6 +43,20 @@ function isAuthed(req) {
     catch (_) { return false; }
 }
 
+// ── Delete PIN (Payments) ─────────────────────────────────────────────────
+// Deleting a team or a worker's earnings from the Payments page needs this
+// PIN **on top of** the master-password token. The check runs on the server,
+// so without the PIN nobody can delete — from any device, even with the
+// master password. Change via the DELETE_PIN env var if needed.
+const DELETE_PIN = process.env.DELETE_PIN || '099588';
+function pinOk(req) {
+    const p = Buffer.from(String((req.query && req.query.pin) || req.headers['x-delete-pin'] || ''));
+    const want = Buffer.from(DELETE_PIN);
+    if (p.length !== want.length) return false;
+    try { return crypto.timingSafeEqual(p, want); }  // constant-time
+    catch (_) { return false; }
+}
+
 // ============================================================
 // Storage (simple JSON file, atomic write)
 // ============================================================
@@ -159,11 +173,11 @@ app.get('/health', (req, res) => {
 // Open this in a browser (http://<server-ip>:3000/version). If it lists
 // "earnings" and "tombstones", the NEW server is running. If you get 404,
 // the OLD server.js is still running — replace it and restart.
-const SERVER_VERSION = 'panda+hits+payments-3';
+const SERVER_VERSION = 'panda+hits+payments-4';
 app.get('/version', (req, res) => {
     res.json({
         version: SERVER_VERSION,
-        features: ['teams', 'hits', 'earnings', 'tombstones', 'auth'],
+        features: ['teams', 'hits', 'earnings', 'tombstones', 'auth', 'delete-pin'],
         hits: Object.keys(state.hits).length,
         earnings: Object.keys(state.earnings).length,
         teams: Object.keys(state.teams).length
@@ -485,8 +499,9 @@ app.delete('/hits.json', (req, res) => {
 //   POST   /earnings/:id      → upsert one log (OPEN — RDP scripts post here)
 //   POST   /earnings          → same, id derived from body (WORKER ID / workerId / id)
 //   GET    /earnings.json     → all logs                          [token]
-//   DELETE /earnings/:id      → remove one log                    [token]
-//   DELETE /earnings.json     → wipe all earnings history         [token]
+//   DELETE /earnings/team/:t  → remove a team's logs + team row   [token + PIN]
+//   DELETE /earnings/:id      → remove one log                    [token + PIN]
+//   DELETE /earnings.json     → wipe all earnings history         [token + PIN]
 //
 // Scripts can keep sending the exact field names they sent to Firebase:
 // TEAM, USERNAME, "WORKER ID", "SERVER IP", currentEarnings, lastMonthEarnings,
@@ -495,8 +510,8 @@ app.delete('/hits.json', (req, res) => {
 
 // Live push to open Payment dashboards (instant, no waiting for the poll)
 const earningSubscribers = new Set();
-function broadcastEarning(payload) {
-    const msg = `event: earning-update\ndata: ${JSON.stringify(payload)}\n\n`;
+function broadcastEarning(payload, event = 'earning-update') {
+    const msg = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
     for (const res of earningSubscribers) { try { res.write(msg); } catch (_) {} }
 }
 
@@ -558,18 +573,47 @@ app.get('/earnings/stream', (req, res) => {
     req.on('close', () => { clearInterval(hb); earningSubscribers.delete(res); });
 });
 
+// --- Delete a whole team from Payments (token + PIN) ---
+// Removes every earnings log whose TEAM matches (case-insensitive) AND the
+// Panda Commander team entry itself, so the team row disappears from the
+// overview on every device. If that team's scripts are still running, their
+// next report re-creates the data — delete after decommissioning a team.
+app.delete('/earnings/team/:team', (req, res) => {
+    if (!isAuthed(req)) return res.status(401).json({ error: 'unauthorized' });
+    if (!pinOk(req)) return res.status(403).json({ error: 'wrong pin' });
+    const want = decodeURIComponent(req.params.team).trim().toUpperCase();
+    if (!want) return res.status(400).json({ error: 'team required' });
+    let removedLogs = 0;
+    for (const [id, log] of Object.entries(state.earnings)) {
+        const t = String((log && (log.TEAM || log.team)) || '').trim().toUpperCase();
+        if (t === want) { delete state.earnings[id]; removedLogs++; }
+    }
+    let teamRemoved = false;
+    for (const key of Object.keys(state.teams)) {
+        if (String(key).trim().toUpperCase() === want) { delete state.teams[key]; teamRemoved = true; }
+    }
+    saveState();
+    broadcastEarning({ team: want, removedLogs, teamRemoved }, 'earning-delete');
+    console.log(`  → [PAYMENTS] team ${want} deleted (${removedLogs} logs, panda entry: ${teamRemoved})`);
+    res.json({ team: want, removedLogs, teamRemoved });
+});
+
 app.delete('/earnings/:id', (req, res) => {
     if (!isAuthed(req)) return res.status(401).json({ error: 'unauthorized' });
+    if (!pinOk(req)) return res.status(403).json({ error: 'wrong pin' });
     const id = decodeURIComponent(req.params.id);
     delete state.earnings[id];
     saveState();
+    broadcastEarning({ id }, 'earning-delete');
     res.json({ deleted: id });
 });
 
 app.delete('/earnings.json', (req, res) => {
     if (!isAuthed(req)) return res.status(401).json({ error: 'unauthorized' });
+    if (!pinOk(req)) return res.status(403).json({ error: 'wrong pin' });
     state.earnings = {};
     saveState();
+    broadcastEarning({}, 'earnings-clear');
     res.json({ cleared: true });
 });
 

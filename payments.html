@@ -118,6 +118,16 @@ body {
 .inner-table tr:last-child td { border-bottom: none; }
 .no-logs { padding: 22px; color: var(--muted); font-size: 14px; font-weight: 500; }
 
+/* ── Delete controls (PIN-protected) ── */
+.btn-del { background: rgba(255,77,106,.14); color: #ff4d6a; border: 1px solid rgba(255,77,106,.45); }
+.btn-del:hover { background: rgba(255,77,106,.28); }
+.inner-table th.del-col, .inner-table td.del-col { width: 48px; text-align: center; padding-left: 3px; padding-right: 3px; }
+.row-del {
+  background: rgba(255,77,106,.12); border: 1px solid rgba(255,77,106,.4); color: #ff4d6a;
+  border-radius: 6px; cursor: pointer; font-size: 15px; line-height: 1; padding: 6px 8px;
+}
+.row-del:hover { background: rgba(255,77,106,.3); }
+
 /* ========================= LOCK SCREEN ========================= */
 .lockScreen {
   position: fixed; inset: 0; z-index: 1000; display: none;
@@ -147,6 +157,10 @@ body {
 }
 .lockBtn:hover { filter: brightness(1.08); }
 .lockMsg { font-size: 12px; color: var(--danger); min-height: 16px; margin-top: 12px; font-weight: 600; }
+.lockBtn.dangerBtn { background: linear-gradient(135deg, #ff4d6a, #c81e3e); box-shadow: 0 6px 18px rgba(255,77,106,.3); }
+.lockBtn.ghostBtn { background: #1e293b; box-shadow: none; border: 1px solid var(--card-border); }
+#pinModal .lockIcon { filter: drop-shadow(0 0 22px rgba(255,77,106,.5)); }
+#pinTarget { color: #ff4d6a; font-weight: 800; }
 
 @media (max-width: 640px) {
   body { padding: 16px 8px; }
@@ -167,6 +181,19 @@ body {
     <input id="lockPw" class="lockInput" type="password" placeholder="Master password" autocomplete="current-password" spellcheck="false">
     <button id="lockGo" class="lockBtn">🔓 Unlock</button>
     <div id="lockMsg" class="lockMsg"></div>
+  </div>
+</div>
+
+<!-- ── DELETE PIN MODAL (server re-checks the PIN — page can't bypass it) ── -->
+<div id="pinModal" class="lockScreen">
+  <div class="lockCard">
+    <div class="lockIcon">🗑</div>
+    <div class="lockTitle">Confirm Delete</div>
+    <div class="lockSub" id="pinDesc">You are deleting: <span id="pinTarget"></span></div>
+    <input id="pinInput" class="lockInput" type="password" inputmode="numeric" placeholder="Delete PIN" autocomplete="off" spellcheck="false">
+    <button id="pinGo" class="lockBtn dangerBtn">🗑 Delete Permanently</button>
+    <button id="pinCancel" class="lockBtn ghostBtn">Cancel</button>
+    <div id="pinMsg" class="lockMsg"></div>
   </div>
 </div>
 
@@ -323,6 +350,8 @@ function startSSE() {
   sse = new EventSource(api("/earnings/stream"));
   sse.addEventListener("ready", () => { sseRetry = 2000; });
   sse.addEventListener("earning-update", () => scheduleReload());
+  sse.addEventListener("earning-delete", () => scheduleReload());
+  sse.addEventListener("earnings-clear", () => scheduleReload());
   sse.onerror = () => {
     setTimeout(() => { if (AUTH_TOKEN && (!sse || sse.readyState === 2)) { sseRetry = Math.min(sseRetry * 1.5, 30000); startSSE(); } }, sseRetry);
   };
@@ -424,7 +453,10 @@ function render(offline) {
           <div class="child-container">
             <div class="team-actions">
               <h3>Detailed Logs: ${x(team)}</h3>
-              <button class="btn-sm" data-export="${x(team)}">Export CSV</button>
+              <div style="display:flex; gap:8px;">
+                <button class="btn-sm" data-export="${x(team)}">Export CSV</button>
+                <button class="btn-sm btn-del" data-delteam="${x(team)}">🗑 Delete Team</button>
+              </div>
             </div>`;
 
     if (!g.rows.length) {
@@ -437,7 +469,7 @@ function render(offline) {
                 <th>SERVER IP</th><th>TEAM</th><th>USERNAME</th><th>WORKER ID</th>
                 <th>CURRENT EARNINGS</th><th>LAST MONTH</th><th>LAST TRANSFER ($)</th>
                 <th>LAST TRANSFER DATE</th><th>NEXT TRANSFER DATE</th><th>TRANSFER METHOD</th>
-                <th>IP</th><th>ALERT</th><th>TIMESTAMP (BD)</th>
+                <th>IP</th><th>ALERT</th><th>TIMESTAMP (BD)</th><th class="del-col">🗑</th>
               </tr></thead><tbody>`;
       g.rows.forEach(r => {
         const isAlert = badAlert(r.alert);
@@ -447,6 +479,7 @@ function render(offline) {
           <td>${x(r.lastTransferDate)}</td><td>${x(r.nextTransferDate)}</td><td>${x(r.transferMethod)}</td>
           <td>${x(r.ip)}</td><td>${isAlert ? `<span class="alert-bad">⚠️ ${x(r.alert)}</span>` : "✔️ OK"}</td>
           <td>${x(r.dateStr)}, ${x(r.timeStr)}</td>
+          <td class="del-col"><button class="row-del" title="Delete this worker's log (PIN)" data-delid="${x(r.id || "")}" data-dellabel="${x(r.workerId)} (${x(r.username)})">🗑</button></td>
         </tr>`;
       });
       html += `</tbody></table></div>`;
@@ -472,7 +505,65 @@ function render(offline) {
       if (grouped[t] && grouped[t].rows.length) exportCSV(grouped[t].rows, t + "_Data");
     });
   });
+  body.querySelectorAll("[data-delteam]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      const t = btn.dataset.delteam;
+      const n = grouped[t] ? grouped[t].rows.length : 0;
+      openPinModal({ kind: "team", team: t, label: `TEAM ${t} — ${n} worker log${n === 1 ? "" : "s"} + the team row` });
+    });
+  });
+  body.querySelectorAll("[data-delid]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      if (!btn.dataset.delid) return;
+      openPinModal({ kind: "row", id: btn.dataset.delid, label: `worker ${btn.dataset.dellabel}` });
+    });
+  });
 }
+
+/* ── PIN-protected delete (the server re-checks the PIN — token alone can't delete) ── */
+let pendingDelete = null;
+function openPinModal(pd) {
+  pendingDelete = pd;
+  document.getElementById("pinTarget").textContent = pd.label;
+  document.getElementById("pinMsg").textContent = "";
+  const inp = document.getElementById("pinInput"); inp.value = "";
+  document.getElementById("pinModal").classList.add("show");
+  setTimeout(() => inp.focus(), 60);
+}
+function closePinModal() {
+  pendingDelete = null;
+  document.getElementById("pinModal").classList.remove("show");
+}
+async function doPinDelete() {
+  if (!pendingDelete || !AUTH_TOKEN) return;
+  const msg = document.getElementById("pinMsg");
+  const pin = document.getElementById("pinInput").value.trim();
+  if (!pin) { msg.textContent = "Enter the delete PIN."; return; }
+  const path = pendingDelete.kind === "team"
+    ? "/earnings/team/" + encodeURIComponent(pendingDelete.team)
+    : "/earnings/" + encodeURIComponent(pendingDelete.id);
+  const btn = document.getElementById("pinGo");
+  btn.disabled = true; msg.textContent = "Deleting…";
+  try {
+    const r = await fetch(api(path) + "&pin=" + encodeURIComponent(pin), { method: "DELETE" });
+    if (r.status === 403) { msg.textContent = "❌ Wrong PIN."; document.getElementById("pinInput").value = ""; return; }
+    if (r.status === 401) { closePinModal(); lockNow("Session expired — enter the password again."); return; }
+    if (!r.ok) { msg.textContent = "Delete failed (HTTP " + r.status + ")."; return; }
+    closePinModal();
+    loadData();                       // server broadcast updates every other device too
+  } catch (_) {
+    msg.textContent = "⚠️ Can't reach the server.";
+  } finally {
+    btn.disabled = false;
+  }
+}
+document.getElementById("pinGo").addEventListener("click", doPinDelete);
+document.getElementById("pinCancel").addEventListener("click", closePinModal);
+document.getElementById("pinInput").addEventListener("keydown", e => { if (e.key === "Enter") doPinDelete(); });
+document.getElementById("pinModal").addEventListener("click", e => { if (e.target === e.currentTarget) closePinModal(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && document.getElementById("pinModal").classList.contains("show")) closePinModal(); });
 
 /* ── CSV export ── */
 function exportCSV(rows, filename) {

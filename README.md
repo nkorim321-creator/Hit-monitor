@@ -133,10 +133,24 @@ tracking normally. In the dashboard's 🗑 Delete Team dialog, the
 ```
 POST   /earnings/:id         → upsert one earnings log (open — scripts post here)
 POST   /earnings             → same; id from body ("WORKER ID" / workerId / id)
-GET    /earnings.json        → all logs                    [token]
-DELETE /earnings/:id         → remove one log              [token]
-DELETE /earnings.json        → wipe all earnings history   [token]
+GET    /earnings.json        → all logs                            [token]
+DELETE /earnings/team/:team  → remove a team's logs + its row      [token + PIN]
+DELETE /earnings/:id         → remove one worker's log             [token + PIN]
+DELETE /earnings.json        → wipe all earnings history           [token + PIN]
 ```
+
+### 🔐 Delete PIN
+
+Deleting anything from the Payments page needs the **delete PIN** (`099588`,
+changeable via the `DELETE_PIN` env var in `server.js`) **on top of** the
+master password. The PIN is re-checked **by the server** on every delete, so
+even someone who knows the master password (and can view) cannot delete — from
+any device. In the page: every detail row has a 🗑 button (delete one worker's
+log) and each team's panel has **🗑 Delete Team** (deletes all that team's logs
+**and** the team row itself, everywhere, instantly via SSE).
+
+> Note: earnings are **live** data. If a deleted team/worker's script is still
+> running, its next report re-creates the entry — delete after decommissioning.
 
 Scripts can keep the exact Firebase field names they already send: `TEAM`,
 `USERNAME`, `"WORKER ID"`, `"SERVER IP"`, `currentEarnings`, `lastMonthEarnings`,
