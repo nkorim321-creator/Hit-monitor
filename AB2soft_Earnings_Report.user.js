@@ -1,14 +1,15 @@
 // ==UserScript==
-// @name         AB2soft Earnings Report v8.0 (Local Server Edition)
+// @name         AB2soft Earnings Report v8.1 (Local Server Edition)
 // @namespace    ab2soft.secure
-// @version      8.0
-// @description  Uploads MTurk earnings to your own Panda Commander server (no Firebase) once per day, only if the worker's TEAM exists in the Google Sheet.
+// @version      8.1
+// @description  Uploads MTurk earnings to your own Panda Commander server (no Firebase) on every /earnings visit, only if the worker's TEAM exists in the Google Sheet. v8.1: redirect-proof sheet loading (gviz) + bank-check diagnostics.
 // @match        https://worker.mturk.com/*
 // @run-at       document-idle
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
 // @connect      docs.google.com
+// @connect      googleusercontent.com
 // @connect      api.ipify.org
 // @connect      38.58.179.188
 // ==/UserScript==
@@ -23,15 +24,30 @@
   // Your server (same one that runs Panda Commander + HIT Tracker + Payments)
   const SERVER_URL = 'http://38.58.179.188:3000';
 
-  // Google Sheet with TEAM / WORKER ID / USERNAME / SERVER IP columns (team gating).
-  const SHEET_CSV =
-    'https://docs.google.com/spreadsheets/d/1bNFhVCn5kEQ-dmXra0DpazfAk7DxTKF5f99u1BIv3FM/export?format=csv&gid=0';
+  const SCRIPT_VERSION = 'v8.1';
+
+  // Each sheet is fetched via TWO URLs, first one that answers wins:
+  //  1) gviz CSV — served straight from docs.google.com with NO redirect, so
+  //     Tampermonkey's @connect list always allows it.
+  //  2) classic export CSV — 307-redirects to googleusercontent.com; on a
+  //     fresh machine Tampermonkey may silently block that redirect, which
+  //     used to make the bank check quietly do nothing. Kept as fallback.
+
+  // Google Sheet with TEAM / WORKER ID / USERNAME (team gating).
+  const SHEET_ID = '1bNFhVCn5kEQ-dmXra0DpazfAk7DxTKF5f99u1BIv3FM';
+  const SHEET_CSV_URLS = [
+    `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=0`,
+    `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`
+  ];
 
   // Google Sheet holding each worker's assigned BANK NUBMER (17-digit). We only
   // read the last 3 digits from it to compare with the transfer method shown on
   // the page — the bank number / password / email NEVER leave this machine.
-  const BANK_SHEET_CSV =
-    'https://docs.google.com/spreadsheets/d/1yVteJGLxlZPRFPhzbzdfW2FXBn7pEQX3C3uI03KlAtA/export?format=csv&gid=0';
+  const BANK_SHEET_ID = '1yVteJGLxlZPRFPhzbzdfW2FXBn7pEQX3C3uI03KlAtA';
+  const BANK_SHEET_CSV_URLS = [
+    `https://docs.google.com/spreadsheets/d/${BANK_SHEET_ID}/gviz/tq?tqx=out:csv&gid=0`,
+    `https://docs.google.com/spreadsheets/d/${BANK_SHEET_ID}/export?format=csv&gid=0`
+  ];
 
   // If the latest transfer failed → alert "UPDATE BANK".
   const ENABLE_UPDATE_BANK_LOGIC = true;
@@ -231,10 +247,24 @@
     return rows.filter(r => r.join('').trim() !== '');
   }
 
+  // Fetch a sheet through the URL list; a response only counts if it actually
+  // looks like our sheet (has a WORKER ID header) — a Google error/login page
+  // or a blocked redirect just moves on to the next URL.
+  async function gmGetSheet(urls) {
+    for (const u of urls) {
+      try {
+        const text = await gmGet(u + '&_=' + Date.now());
+        if (text && /worker.?id/i.test(String(text).slice(0, 4000))) return text;
+        console.warn('[AB2soft] sheet URL answered but not with the sheet:', u);
+      } catch (e) { console.warn('[AB2soft] sheet URL failed:', u, e); }
+    }
+    return '';
+  }
+
   async function loadSheetFullMap() {
     const map = {};
     try {
-      const rows = parseCSV(await gmGet(SHEET_CSV + '&_=' + Date.now()));
+      const rows = parseCSV(await gmGetSheet(SHEET_CSV_URLS));
       if (!rows.length) return map;
       const headers = rows.shift().map(h => h.replace(/^﻿/, '').trim());
       const widIdx = headers.findIndex(h => /worker.?id/i.test(h));
@@ -250,19 +280,20 @@
   }
 
   // Load ONLY the last-3 digits of each worker's assigned bank number.
-  // Returns { byWorker: {workerId: last3}, byUser: {username: last3} }.
+  // Returns { byWorker: {workerId: last3}, byUser: {username: last3}, ok }.
+  // ok=false ⇒ the sheet could not be loaded/understood (never treat as "match").
   // The full bank number / password / email never leave this function.
   async function loadBankLast3() {
     const byWorker = {}, byUser = {};
     try {
-      const rows = parseCSV(await gmGet(BANK_SHEET_CSV + '&_=' + Date.now()));
-      if (!rows.length) return { byWorker, byUser };
+      const rows = parseCSV(await gmGetSheet(BANK_SHEET_CSV_URLS));
+      if (!rows.length) return { byWorker, byUser, ok: false };
       const headers = rows.shift().map(h => h.replace(/^﻿/, '').trim());
       const widIdx  = headers.findIndex(h => /worker.?id/i.test(h));
       const userIdx = headers.findIndex(h => /user.?name/i.test(h));
       // "BANK NUBMER" (note the sheet's spelling) — any header with "bank", not "routing"
       const bankIdx = headers.findIndex(h => /bank/i.test(h) && !/rout/i.test(h));
-      if (bankIdx < 0) return { byWorker, byUser };
+      if (bankIdx < 0) return { byWorker, byUser, ok: false };
       for (const row of rows) {
         const digits = String(row[bankIdx] || '').replace(/\D/g, '');
         if (digits.length < 3) continue;
@@ -272,8 +303,10 @@
         if (wid)  byWorker[wid] = last3;
         if (user) byUser[user]  = last3;
       }
+      console.log(`[AB2soft] bank sheet loaded: ${Object.keys(byWorker).length} worker ids`);
+      return { byWorker, byUser, ok: true };
     } catch (e) { console.warn("⚠️ Bank sheet load error", e); }
-    return { byWorker, byUser };
+    return { byWorker, byUser, ok: false };
   }
 
   /* ────────────────────────────── MAIN ────────────────────────────── */
@@ -299,17 +332,29 @@
   //    bank number's last-3 from the bank sheet. Mismatch → "WRONG BANK". ──
   // Always a non-empty value ('OK' when fine) so a previously-set WRONG BANK
   // clears once the worker fixes it (the server skips empty updates).
-  let alert = 'OK';
+  // bankCheck (stored, not shown in the dashboard) says WHY the alert is what
+  // it is, so a silent sheet failure can never masquerade as a real "OK" again.
+  let alert = 'OK', bankCheck = '';
   const bank = await loadBankLast3();
   const sheetLast3 = bank.byWorker[data.workerId] || (userName ? bank.byUser[userName] : '') || '';
 
   if (data._updateBankFlag) {
-    alert = 'UPDATE BANK';                    // latest transfer failed → highest priority
+    alert = 'UPDATE BANK'; bankCheck = 'failed-transfer';   // latest transfer failed → highest priority
   } else if (data.isGiftCard) {
-    alert = 'OK';                             // gift card has no bank last-3 → not a mismatch
-  } else if (sheetLast3 && data.transferLast3 && data.transferLast3 !== sheetLast3) {
-    alert = 'WRONG BANK';
+    alert = 'OK'; bankCheck = 'giftcard';                   // gift card has no bank last-3 → not a mismatch
+  } else if (!bank.ok) {
+    bankCheck = 'sheet-error';                              // couldn't verify — NOT silent anymore
+    toast('⚠️ Bank sheet not reachable — bank check skipped this visit');
+  } else if (!sheetLast3) {
+    bankCheck = 'no-sheet-row';                             // this worker has no bank row in the sheet
+  } else if (!data.transferLast3) {
+    bankCheck = 'no-method-digits';                         // page shows no bank digits to compare
+  } else if (data.transferLast3 !== sheetLast3) {
+    alert = 'WRONG BANK'; bankCheck = 'mismatch';
+  } else {
+    bankCheck = 'match';
   }
+  console.log('[AB2soft] bank check:', bankCheck, '→ alert:', alert);
 
   // Build the payload — ONLY the fields the Payments page shows. We deliberately
   // do NOT spread the sheet rows, so bank numbers / passwords / emails never
@@ -327,14 +372,16 @@
     bankAccount:       data.bankAccount,
     ip:                data.ip,
     alert:             alert,
-    timestamp:         new Date().toISOString()
+    timestamp:         new Date().toISOString(),
+    script:            SCRIPT_VERSION,   // which script version this RDP runs
+    bankCheck:         bankCheck         // why the alert is OK/WRONG BANK (debug)
   };
 
   try {
     const status = await gmPost(`${SERVER_URL}/earnings/${encodeURIComponent(data.workerId)}`, payload);
     if (status >= 200 && status < 300) {
       await GM_setValue(guardKey, String(Date.now()));
-      toast(`✅ Synced ${data.workerId} (${teamName}) → server`);
+      toast(`✅ Synced ${data.workerId} (${teamName}) → server [${SCRIPT_VERSION}]`);
       console.log('[AB2soft] Synced', data.workerId, payload);
     } else {
       toast(`⚠️ Server responded ${status} — will retry next visit`);

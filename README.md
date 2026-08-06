@@ -26,6 +26,16 @@ One server powers **all three**:
 > server or the dashboard. (That sheet still holds secrets, so keep its sharing
 > tight.) The Payments **ALERT** column turns red for `WRONG BANK` / `UPDATE BANK`.
 >
+> **v8.1**: sheets are loaded via the redirect-free `gviz` CSV endpoint (the old
+> `export?format=csv` URL 307-redirects to `googleusercontent.com`, which
+> Tampermonkey can silently block on a fresh machine — that made the bank check
+> quietly report `OK`). Every post now carries `script: "v8.1"` and a
+> `bankCheck` reason (`match` / `mismatch` / `sheet-error` / `no-sheet-row` /
+> `giftcard` / `failed-transfer`) so a machine running an **old script** or a
+> failed sheet load is visible in the data instead of silently looking "OK".
+> **A worker whose ALERT looks wrong is almost always an RDP still running the
+> old script — reinstall the userscript there and re-visit /earnings.**
+>
 > The team overview also has a **BANK STATUS** column: **✅ ALL OK** (green) when
 > every worker's bank matches, or a red **🚨 N WRONG BANK** count so you can spot
 > the problem team at a glance ("—" = no earnings reported yet). It updates live.
