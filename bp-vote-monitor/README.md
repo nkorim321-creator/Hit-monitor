@@ -21,7 +21,16 @@ Server kono account e login kore na, tai proti account nijer browser/IP thekei c
 
 ## Setup
 
-### 1. Server chalano (tomar VPS e, jemon 38.58.179.188)
+### 1A. Notun Windows Server (2025) e setup
+
+1. Server e RDP diye dhuko. Edge diye https://nodejs.org theke **LTS** download kore install koro (shob option default rekhe Next, Next).
+2. GitHub theke ei branch er **ZIP** download koro, extract koro, `bp-vote-monitor` folder ta `C:\bp-vote-monitor` e rakho.
+3. `C:\bp-vote-monitor\install-windows.bat` e **right-click → Run as administrator**. Password chaile dao (shudhu letter/number).
+   Eta port 3100 open kore, server chalu kore, ar reboot er por nije nije chalu hoy.
+4. VPS company r panel e (Contabo/Vultr/AWS ityadi) firewall thakle sheikhane o **TCP 3100** open koro.
+5. Server bondho/remove korte: `uninstall-windows.bat` (Run as administrator).
+
+### 1B. Linux VPS e setup
 
 ```bash
 cd bp-vote-monitor

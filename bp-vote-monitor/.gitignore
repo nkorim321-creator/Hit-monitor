@@ -1,2 +1,4 @@
 accounts.json
 accounts.json.tmp
+run-server.bat
+server.log
