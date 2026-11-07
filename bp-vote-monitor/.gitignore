@@ -1,4 +1,7 @@
 accounts.json
 accounts.json.tmp
+sheet-cache.json
+token-secret.txt
+passwords.json
 run-server.bat
 server.log

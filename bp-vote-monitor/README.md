@@ -25,7 +25,7 @@ Server kono account e login kore na, tai proti account nijer browser/IP thekei c
 
 1. Server e RDP diye dhuko. Edge diye https://nodejs.org theke **LTS** download kore install koro (shob option default rekhe Next, Next).
 2. GitHub theke ei branch er **ZIP** download koro, extract koro, `bp-vote-monitor` folder ta `C:\bp-vote-monitor` e rakho.
-3. `C:\bp-vote-monitor\install-windows.bat` e **right-click → Run as administrator**. Dashboard er password dao (shudhu letter/number).
+3. `C:\bp-vote-monitor\install-windows.bat` e **right-click → Run as administrator**. Prothom bar **Admin password** chaibe (ALL ID er password). Dashboard er password dao (shudhu letter/number).
    Eta port 3100 open kore, server chalu kore, ar reboot er por nije nije chalu hoy.
 4. VPS company r panel e (Contabo/Vultr/AWS ityadi) firewall thakle sheikhane o **TCP 3100** open koro.
 5. Server bondho/remove korte: `uninstall-windows.bat` (Run as administrator).
@@ -60,10 +60,22 @@ Firewall e port **3100** open rakhte hobe.
 
 ### 3. Dashboard
 
-Browser e `http://50.117.3.240:3100` kholo. Prothom bar password chaibe, ekbar dile oi browser e ar chaibe na (🔒 Logout dile abar chaibe).
-Password shudhu dashboard er jonno, ID er script e kono password lage na.
+Browser e `http://50.117.3.240:3100` kholo.
 
-- Upore box e click korle filter hoy (Running / Blocked / Offline)
-- Naam e click korle rename kora jay
-- **🔔 Alerts** on korle kono account unblock hole sound + notification ashbe
-- ✕ diye purano account remove kora jay
+- Upore **team button** (Google Sheet theke ashe): NOUSHAD, SUJON, Hirexology, Bhiya Self, ar **ALL ID** (shudhu admin).
+- Team e click korle oi team er password chay. Ekbar dile oi browser e ar chay na (**🔒 Logout** dile abar chaibe).
+- Team password diye shudhu nijer team er ID dekha jay. Admin (ALL ID) password diye shob team dekha jay.
+- Serial number (1, 2, 3 ...) e click korle shudhu oi ID dekhay. Number er rong: sobuj = Running, lal = Blocked, dhushor = Offline/No data.
+- Card e: **ID-number, Mail, Worker ID, BP Year** (sheet theke), ar status, unlock countdown, balance.
+- **🔔 Alerts** on korle kono ID unblock hole sound + notification ashbe.
+
+### Team password set / change
+
+**ALL ID** e admin password diye dhuko → **🔑 Passwords** button → team er pashe notun password likhe **Save**.
+Notun team sheet e add korle oi team o ei list e chole ashbe. Password shudhu server er `passwords.json` e hash kore thake, git e jay na.
+
+### Google Sheet
+
+Server protiti 1 minute e sheet ta pore (`server.js` e `SHEET_ID`). Column: **Serial, BP Year, Mail, Worker ID, Team name**.
+Sheet ta "Anyone with the link can view" share thakte hobe. Notun ID / team sheet e add korlei dashboard e chole ashbe.
+Script er pathano mail ar sheet er **Mail** mil kore ID chena hoy.

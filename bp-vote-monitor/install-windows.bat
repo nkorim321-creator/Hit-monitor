@@ -29,20 +29,23 @@ if not defined NODE (
 )
 echo  Node found: %NODE%
 
+findstr /c:"\"ALL\"" "%~dp0passwords.json" >nul 2>&1
+if not errorlevel 1 goto haveadmin
 echo.
-:askpw
-set "SECRET="
-set /p "SECRET=Set a dashboard password (letters/numbers only, e.g. bp2026): "
-if not defined SECRET (
-  echo  Password cannot be empty.
-  goto askpw
-)
+echo  First setup: choose the ADMIN password (opens ALL ID on the dashboard).
+echo  Team passwords are set later from the dashboard: ALL ID -^> Passwords.
+:askadmin
+set "ADMINPW="
+set /p "ADMINPW=Admin password: "
+if not defined ADMINPW goto askadmin
+"%NODE%" "%~dp0set-password.js" ALL "%ADMINPW%"
+set "ADMINPW="
+:haveadmin
 
 (
   echo @echo off
   echo cd /d "%~dp0"
   echo set PORT=3100
-  echo set SECRET=%SECRET%
   echo "%NODE%" "%~dp0server.js" ^>^> server.log 2^>^&1
 ) > run-server.bat
 
@@ -61,7 +64,7 @@ echo.
 echo  ======================================================
 echo   Done! Open the dashboard:  http://localhost:3100
 echo   From other PCs:            http://50.117.3.240:3100
-echo   Password:                  %SECRET%
+echo   Passwords are in passwords.json (change with set-password.js)
 echo   Log file: %~dp0server.log
 echo  ======================================================
 echo.

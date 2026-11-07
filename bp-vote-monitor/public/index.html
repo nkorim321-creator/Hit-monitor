@@ -3,55 +3,79 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
 <title>BP Vote Monitor</title>
 <style>
   :root {
     --bg: #070b14; --panel: #0d1424; --panel2: #111a2e; --line: #1d2a44;
     --text: #e2e8f0; --muted: #7c8aa5; --green: #22c55e; --red: #ef4444;
-    --amber: #f59e0b; --gray: #64748b; --blue: #38bdf8;
+    --amber: #f59e0b; --gray: #64748b; --blue: #38bdf8; --accent: #1d4ed8;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
-  header { position: sticky; top: 0; z-index: 5; background: rgba(7,11,20,.92); backdrop-filter: blur(8px);
+  header { position: sticky; top: 0; z-index: 5; background: rgba(7,11,20,.94); backdrop-filter: blur(8px);
            border-bottom: 1px solid var(--line); padding: 12px 16px; }
   .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   h1 { font-size: 18px; margin: 0; letter-spacing: .3px; }
-  h1 small { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
   .spacer { flex: 1; }
   .conn { font-size: 12px; color: var(--muted); }
   .conn.err { color: var(--red); }
+  input, select, button { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+                          border-radius: 8px; padding: 7px 10px; font: inherit; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--blue); }
+
+  .teams { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .team { font-weight: 600; padding: 8px 14px; }
+  .team small { font-weight: 400; color: var(--muted); margin-left: 4px; }
+  .team.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .team.active small { color: #c7d2fe; }
+  .team.admin { border-style: dashed; }
+
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 12px; }
   .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+  .stat.static { cursor: default; }
   .stat.active { outline: 2px solid var(--blue); }
   .stat .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .stat .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+
+  .serials { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .sgroup { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .sgroup .gl { font-size: 11px; color: var(--muted); min-width: 70px; text-transform: uppercase; letter-spacing: .5px; }
+  .chip { min-width: 34px; padding: 4px 8px; border-radius: 7px; font-size: 12px; font-weight: 700; text-align: center;
+          border: 1px solid var(--line); background: var(--panel2); cursor: pointer; font-variant-numeric: tabular-nums; }
+  .chip.RUNNING, .chip.READY { border-color: rgba(34,197,94,.6); color: var(--green); }
+  .chip.BLOCKED { border-color: rgba(239,68,68,.6); color: var(--red); }
+  .chip.OFFLINE, .chip.LOGGED_OUT, .chip.UNKNOWN, .chip.NODATA { color: #94a3b8; }
+  .chip.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
+
   .tools { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-  input, select, button { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
-                          border-radius: 8px; padding: 7px 10px; font: inherit; }
-  input { flex: 1; min-width: 160px; }
-  button { cursor: pointer; }
-  button:hover { border-color: var(--blue); }
+  .tools input { flex: 1; min-width: 160px; }
+
   main { padding: 16px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
   .card { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--gray);
           border-radius: 12px; padding: 12px 14px; }
   .card.RUNNING { border-left-color: var(--green); }
   .card.BLOCKED { border-left-color: var(--red); }
   .card.READY   { border-left-color: var(--blue); }
-  .card.OFFLINE, .card.LOGGED_OUT, .card.UNKNOWN { border-left-color: var(--gray); opacity: .85; }
+  .card.OFFLINE, .card.LOGGED_OUT, .card.UNKNOWN, .card.NODATA { opacity: .85; }
   .row1 { display: flex; align-items: flex-start; gap: 8px; }
-  .name { font-weight: 600; font-size: 15px; cursor: pointer; word-break: break-all; }
-  .name:hover { text-decoration: underline dotted; }
-  .email { color: var(--muted); font-size: 12px; word-break: break-all; }
+  .idline { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .idno { font-weight: 800; font-size: 15px; white-space: nowrap; }
+  .idno .tm { color: var(--blue); font-weight: 600; }
+  .mail { font-weight: 600; font-size: 14px; word-break: break-all; }
+  .sub { color: var(--muted); font-size: 12px; margin-top: 2px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .sub b { color: #cbd5e1; font-weight: 600; }
   .pill { margin-left: auto; white-space: nowrap; font-size: 11px; font-weight: 700; padding: 3px 9px;
           border-radius: 999px; letter-spacing: .5px; }
   .pill.RUNNING { background: rgba(34,197,94,.15); color: var(--green); }
   .pill.BLOCKED { background: rgba(239,68,68,.15); color: var(--red); }
   .pill.READY   { background: rgba(56,189,248,.15); color: var(--blue); }
-  .pill.OFFLINE, .pill.LOGGED_OUT, .pill.UNKNOWN { background: rgba(100,116,139,.2); color: #94a3b8; }
+  .pill.OFFLINE, .pill.LOGGED_OUT, .pill.UNKNOWN, .pill.NODATA { background: rgba(100,116,139,.2); color: #94a3b8; }
   .big { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 0 6px; }
   .timer { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .timer.red { color: var(--red); } .timer.green { color: var(--green); } .timer.gray { color: var(--muted); font-size: 16px; }
+  .timer.red { color: var(--red); } .timer.green { color: var(--green); } .timer.gray { color: var(--muted); font-size: 15px; }
   .bal { text-align: right; }
   .bal b { font-size: 18px; }
   .bal div { font-size: 11px; color: var(--muted); }
@@ -62,54 +86,79 @@
   .foot a { color: var(--muted); cursor: pointer; }
   .foot a:hover { color: var(--red); }
   .empty { text-align: center; color: var(--muted); padding: 60px 16px; }
-  .empty code { background: var(--panel2); padding: 2px 6px; border-radius: 4px; }
+
   #login { position: fixed; inset: 0; z-index: 50; background: rgba(4,7,14,.97); display: flex;
            align-items: center; justify-content: center; padding: 16px; }
   #login[hidden] { display: none; }
-  #login form { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 28px 24px;
-                width: 100%; max-width: 340px; text-align: center; }
+  #login form { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+                padding: 28px 24px; width: 100%; max-width: 340px; text-align: center; }
   #login h2 { margin: 0 0 6px; font-size: 20px; }
   #login p { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
   #login input { width: 100%; margin-bottom: 10px; font-size: 16px; padding: 10px 12px; }
-  #login button { width: 100%; padding: 10px; font-weight: 600; background: #1d4ed8; border-color: #1d4ed8; }
+  #login button[type=submit] { width: 100%; padding: 10px; font-weight: 600; background: var(--accent); border-color: var(--accent); }
+  #loginClose { position: absolute; top: 8px; right: 8px; padding: 2px 9px; background: none; border: none; color: var(--muted); font-size: 18px; }
   #loginErr { color: var(--red); font-size: 13px; min-height: 18px; margin-top: 8px; }
+  #pwPanel { position: fixed; inset: 0; z-index: 40; background: rgba(4,7,14,.9); display: flex;
+             align-items: center; justify-content: center; padding: 16px; }
+  #pwPanel[hidden] { display: none; }
+  #pwPanel .box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px;
+                  width: 100%; max-width: 460px; max-height: 90vh; overflow: auto; }
+  #pwPanel h2 { margin: 0 0 4px; font-size: 18px; }
+  #pwPanel .hint { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
+  .pwrow { display: grid; grid-template-columns: 110px 1fr auto; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .pwrow .tn { font-weight: 600; word-break: break-word; }
+  .pwrow .tn small { display: block; font-weight: 400; font-size: 11px; color: var(--muted); }
+  .pwrow .tn small.ok { color: var(--green); }
+  .pwrow input { min-width: 0; }
+  .pwmsg { font-size: 12px; min-height: 16px; margin-top: 6px; }
   @media (max-width: 480px) { header { position: static; } main { padding: 10px; } .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 <header>
   <div class="top">
-    <h1>🗳 BP Vote Monitor <small>all accounts, one page</small></h1>
+    <h1>🗳 BP Vote Monitor</h1>
     <div class="spacer"></div>
-    <span class="conn" id="conn">connecting…</span>
-  </div>
-  <div class="stats" id="stats"></div>
-  <div class="tools">
-    <input id="q" placeholder="Search name / email / id…">
-    <select id="sort">
-      <option value="status">Sort: status</option>
-      <option value="unlock">Sort: unlock soonest</option>
-      <option value="balance">Sort: balance</option>
-      <option value="name">Sort: name</option>
-      <option value="seen">Sort: last seen</option>
-    </select>
+    <span class="conn" id="conn"></span>
     <button id="logoutBtn" title="Logout from this browser">🔒 Logout</button>
-    <button id="notifyBtn" title="Alert me when an account gets unblocked">🔔 Alerts: off</button>
+  </div>
+  <div class="teams" id="teams"></div>
+  <div id="teamView" hidden>
+    <div class="stats" id="stats"></div>
+    <div class="serials" id="serials"></div>
+    <div class="tools">
+      <input id="q" placeholder="Search mail / worker ID…">
+      <select id="sort">
+        <option value="serial">Sort: ID number</option>
+        <option value="status">Sort: status</option>
+        <option value="unlock">Sort: unlock soonest</option>
+        <option value="balance">Sort: balance</option>
+      </select>
+      <button id="notifyBtn" title="Alert me when an ID gets unblocked">🔕 Alerts: off</button>
+      <button id="pwBtn" hidden title="Set team passwords">🔑 Passwords</button>
+    </div>
   </div>
 </header>
 <main>
   <div class="grid" id="grid"></div>
-  <div class="empty" id="empty" hidden>
-    No accounts yet.<br><br>
-    Install <code>BP_Vote_Monitor.user.js</code> in Tampermonkey on each account's browser
-    and open <code>bpworker.com/vote</code> once.
-  </div>
+  <div class="empty" id="empty">Choose a team above.</div>
 </main>
+
+<div id="pwPanel" hidden>
+  <div class="box">
+    <div style="display:flex;align-items:center"><h2>🔑 Team passwords</h2><div class="spacer"></div><button id="pwClose">Close</button></div>
+    <p class="hint">Each team sees only its own IDs. ALL ID = admin (sees every team). Passwords are stored only on the server, hashed. Old passwords cannot be shown.</p>
+    <div id="pwRows"></div>
+    <div class="pwmsg" id="pwMsg"></div>
+  </div>
+</div>
+
 <div id="login" hidden>
   <form id="loginForm" autocomplete="on">
-    <h2>🔒 BP Vote Monitor</h2>
-    <p>Enter password to open the dashboard</p>
-    <input type="text" name="username" value="bp-vote-monitor" autocomplete="username" hidden>
+    <button type="button" id="loginClose" title="Close">×</button>
+    <h2>🔒 <span id="loginTeam"></span></h2>
+    <p>Enter password to open this team</p>
+    <input type="text" name="username" id="loginUser" autocomplete="username" hidden>
     <input id="pw" type="password" placeholder="Password" autocomplete="current-password" required>
     <button type="submit">Login</button>
     <div id="loginErr"></div>
@@ -121,22 +170,22 @@
   const OFFLINE_AFTER_MS = 3 * 60 * 1000;   // no report for 3 min → OFFLINE
   const POLL_MS = 5000;
 
-  // Password: asked by the login box (or /?key=YOURKEY once); remembered in this browser.
-  const qs = new URLSearchParams(location.search);
   const ls = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
-               set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
-  if (qs.get('key')) { ls.set('bpvm_key', qs.get('key')); history.replaceState(null, '', location.pathname); }
-  let KEY = ls.get('bpvm_key') || '';
-  let triedLogin = false;
+               set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+               del(k) { try { localStorage.removeItem(k); } catch (e) {} } };
+  // Tokens (not passwords) are remembered per team in this browser
+  const tokKey = t => 'bpvm_tok_' + t.toUpperCase();
+  const tokenFor = t => ls.get(tokKey(t)) || ls.get(tokKey('ALL')) || '';
 
-  let accounts = [], serverSkew = 0, filter = ls.get('bpvm_filter') || 'ALL';
-  let notifyOn = ls.get('bpvm_notify') === '1';
+  let teams = [], team = ls.get('bpvm_team') || '', accounts = [], serverSkew = 0;
+  let filter = 'ALL', selected = null, notifyOn = ls.get('bpvm_notify') === '1', passwordTeams = [];
   const prevStatus = {};
 
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
   const money = c => c == null ? '—' : '$' + (c / 100).toFixed(2);
   const now = () => Date.now() + serverSkew;
+  const serialNum = a => { const n = parseFloat(a.serial); return isNaN(n) ? 1e9 : n; };
 
   function hms(ms) {
     if (ms < 0) ms = 0;
@@ -151,93 +200,219 @@
     return Math.floor(s / 86400) + 'd ago';
   }
 
-  // Effective status shown on the dashboard
   function statusOf(a) {
+    if (!a.reported) return 'NODATA';
     if (now() - a.lastSeen > OFFLINE_AFTER_MS) return 'OFFLINE';
     if (a.state === 'BLOCKED') return (a.unlockAt && a.unlockAt <= now()) ? 'READY' : 'BLOCKED';
     return a.state || 'UNKNOWN';
   }
-  const LABEL = { RUNNING: 'RUNNING', BLOCKED: 'BLOCKED', READY: 'UNLOCKED', OFFLINE: 'OFFLINE', LOGGED_OUT: 'LOGGED OUT', UNKNOWN: 'UNKNOWN' };
-  const ORDER = { READY: 0, RUNNING: 1, BLOCKED: 2, LOGGED_OUT: 3, UNKNOWN: 4, OFFLINE: 5 };
-  const displayName = a => a.alias || a.nickname || a.email || a.id;
+  const LABEL = { RUNNING: 'RUNNING', BLOCKED: 'BLOCKED', READY: 'UNLOCKED', OFFLINE: 'OFFLINE',
+                  LOGGED_OUT: 'LOGGED OUT', UNKNOWN: 'UNKNOWN', NODATA: 'NO DATA' };
+  const ORDER = { READY: 0, RUNNING: 1, BLOCKED: 2, LOGGED_OUT: 3, UNKNOWN: 4, OFFLINE: 5, NODATA: 6 };
+  const isRun = s => s === 'RUNNING' || s === 'READY';
+  const isOff = s => ['OFFLINE', 'LOGGED_OUT', 'UNKNOWN', 'NODATA'].includes(s);
+  const idLabel = a => a.unassigned ? 'Not in sheet' : `ID-${a.serial}`;
 
+  /* ── team buttons ─────────────────────────────────────── */
+  function renderTeams() {
+    const btn = (name, label, count, extra = '') => {
+      const unlocked = !!tokenFor(name);
+      return `<button class="team ${extra} ${name === team ? 'active' : ''}" data-team="${esc(name)}">
+        ${unlocked ? '' : '🔒 '}${esc(label)}${count != null ? `<small>(${count})</small>` : ''}</button>`;
+    };
+    $('teams').innerHTML = teams.map(t => btn(t.name, t.name, t.count)).join('') + btn('ALL', 'ALL ID', null, 'admin');
+  }
+
+  function openTeam(name) {
+    team = name; selected = null; filter = 'ALL'; accounts = [];
+    ls.set('bpvm_team', team);
+    renderTeams(); render();
+    if (!tokenFor(team)) showLogin(); else poll();
+  }
+
+  /* ── login box ────────────────────────────────────────── */
+  function showLogin(err) {
+    $('loginTeam').textContent = team === 'ALL' ? 'ALL ID (Admin)' : team;
+    $('loginUser').value = 'bp-vote-monitor ' + team;
+    $('loginErr').textContent = err || '';
+    $('pw').value = '';
+    $('login').hidden = false;
+    $('pw').focus();
+  }
+  $('loginForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+      const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team, password: $('pw').value }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { $('loginErr').textContent = r.status === 401 ? 'Wrong password. Please try again.' : (d.error || 'Error'); $('pw').select(); return; }
+      ls.set(tokKey(d.scope), d.token);
+      $('login').hidden = true;
+      renderTeams(); poll();
+    } catch (err) { $('loginErr').textContent = 'Server not reachable'; }
+  });
+  $('loginClose').addEventListener('click', () => {
+    $('login').hidden = true;
+    if (!tokenFor(team)) { team = ''; ls.del('bpvm_team'); renderTeams(); render(); }
+  });
+  $('logoutBtn').addEventListener('click', () => {
+    try { Object.keys(localStorage).filter(k => k.startsWith('bpvm_tok_')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+    team = ''; ls.del('bpvm_team'); accounts = []; selected = null;
+    renderTeams(); render();
+  });
+
+  /* ── data ─────────────────────────────────────────────── */
+  async function loadTeams() {
+    try {
+      const r = await fetch('/api/teams');
+      teams = (await r.json()).teams || [];
+    } catch (e) {}
+    renderTeams();
+  }
+
+  async function poll() {
+    if (!team || !tokenFor(team)) return;
+    const asked = team;
+    try {
+      const r = await fetch('/api/accounts?team=' + encodeURIComponent(team), { headers: { 'X-Token': tokenFor(team) } });
+      if (asked !== team) return;
+      if (r.status === 401) {
+        if (ls.get(tokKey(team))) ls.del(tokKey(team)); else ls.del(tokKey('ALL'));
+        accounts = []; renderTeams(); render();
+        if (!tokenFor(team)) showLogin();
+        return;
+      }
+      const d = await r.json();
+      serverSkew = d.now - Date.now();
+      accounts = d.accounts || [];
+      if (d.passwordTeams) passwordTeams = d.passwordTeams;
+      $('conn').textContent = d.sheetError ? '⚠ Sheet: ' + d.sheetError : 'updated ' + new Date().toLocaleTimeString();
+      $('conn').className = d.sheetError ? 'conn err' : 'conn';
+    } catch (e) {
+      $('conn').textContent = '⚠ server not reachable';
+      $('conn').className = 'conn err';
+    }
+    render();
+  }
+
+  /* ── rendering ────────────────────────────────────────── */
   function renderStats() {
     const c = { ALL: accounts.length, RUNNING: 0, BLOCKED: 0, OFFLINE: 0 };
     let bal = 0, votes = 0;
     for (const a of accounts) {
       const s = statusOf(a);
-      if (s === 'RUNNING' || s === 'READY') c.RUNNING++;
-      else if (s === 'BLOCKED') c.BLOCKED++;
-      else c.OFFLINE++;
+      if (isRun(s)) c.RUNNING++; else if (s === 'BLOCKED') c.BLOCKED++; else c.OFFLINE++;
       bal += a.totalBalanceCents || 0;
       if (s === 'RUNNING') votes += a.totalAvailable || 0;
     }
     const items = [
-      ['ALL', c.ALL, 'Accounts', ''],
+      ['ALL', c.ALL, 'IDs', ''],
       ['RUNNING', c.RUNNING, 'Running / Unlocked', 'color:var(--green)'],
       ['BLOCKED', c.BLOCKED, 'Blocked', 'color:var(--red)'],
-      ['OFFLINE', c.OFFLINE, 'Offline / Logged out', 'color:#94a3b8'],
+      ['OFFLINE', c.OFFLINE, 'Offline / No data', 'color:#94a3b8'],
       [null, money(bal), 'Total balance', ''],
       [null, votes, 'Votes available', 'color:var(--blue)'],
     ];
     $('stats').innerHTML = items.map(([f, n, l, st]) =>
-      `<div class="stat ${f && f === filter ? 'active' : ''}" ${f ? `data-f="${f}"` : ''}>
+      `<div class="stat ${f ? (f === filter ? 'active' : '') : 'static'}" ${f ? `data-f="${f}"` : ''}>
          <div class="n" style="${st}">${esc(n)}</div><div class="l">${l}</div></div>`).join('');
   }
 
+  function renderSerials() {
+    const groups = new Map();
+    const tIdx = a => { const i = teams.findIndex(t => t.name === a.team); return i < 0 ? 999 : i; };
+    for (const a of [...accounts].sort((x, y) => tIdx(x) - tIdx(y) || serialNum(x) - serialNum(y))) {
+      const g = team === 'ALL' ? (a.team || 'Not in sheet') : '';
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(a);
+    }
+    const allChip = `<span class="chip ${selected === null ? 'sel' : ''}" data-sel="">All</span>`;
+    let html = `<div class="sgroup">${allChip}</div>`;
+    for (const [g, list] of groups) {
+      html += `<div class="sgroup">${g ? `<span class="gl">${esc(g)}</span>` : ''}` +
+        list.map(a => `<span class="chip ${statusOf(a)} ${selected === a.key ? 'sel' : ''}" data-sel="${esc(a.key)}"
+          title="${esc(a.mail)} · ${LABEL[statusOf(a)]}">${a.unassigned ? '?' : esc(a.serial)}</span>`).join('') + `</div>`;
+    }
+    $('serials').innerHTML = html;
+  }
+
+  function cardHtml(a) {
+    const s = statusOf(a);
+    let timer;
+    if (s === 'BLOCKED') timer = `<div class="timer red">${hms(a.unlockAt - now())}</div>`;
+    else if (s === 'READY') timer = `<div class="timer green">Unlocked ✓</div>`;
+    else if (s === 'RUNNING') timer = `<div class="timer green">${a.totalAvailable || 0} <span style="font-size:13px;color:var(--muted)">votes avail.</span></div>`;
+    else if (s === 'OFFLINE') timer = `<div class="timer gray">No report ${ago(now() - a.lastSeen)}</div>`;
+    else if (s === 'NODATA') timer = `<div class="timer gray">Script not reporting yet</div>`;
+    else timer = `<div class="timer gray">${LABEL[s]}</div>`;
+
+    const cats = (a.categories || []).map(c =>
+      `<span class="${c.count > 0 ? 'has' : ''}">${esc(c.name)} <b>${c.count}</b></span>`).join('');
+    const footL = s === 'BLOCKED' && a.unlockAt
+      ? `Unlocks at ${new Date(a.unlockAt - serverSkew).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+      : (a.rateLimitText ? `Limit ${esc(a.rateLimitText)}` : '');
+    const footR = a.reported ? `seen ${ago(now() - a.lastSeen)}` : '';
+    const del = team === 'ALL' && a.accountId ? ` · <a data-del="${esc(a.accountId)}" title="Remove this report">✕</a>` : '';
+
+    return `<div class="card ${s}">
+      <div class="row1">
+        <div style="min-width:0">
+          <div class="idline">
+            <span class="idno">${team === 'ALL' && a.team ? `<span class="tm">${esc(a.team)}</span> · ` : ''}${esc(idLabel(a))}</span>
+            <span class="mail">${esc(a.mail)}</span>
+          </div>
+          <div class="sub">
+            ${a.workerId ? `<span>Worker ID <b>${esc(a.workerId)}</b></span>` : ''}
+            ${a.bpYear ? `<span>BP Year <b>${esc(a.bpYear)}</b></span>` : ''}
+          </div>
+        </div>
+        <span class="pill ${s}">${LABEL[s]}</span>
+      </div>
+      <div class="big">${timer}
+        <div class="bal"><b>${money(a.totalBalanceCents)}</b><div>balance</div></div></div>
+      ${cats && s !== 'BLOCKED' ? `<div class="cats">${cats}</div>` : ''}
+      <div class="foot"><span>${footL || '&nbsp;'}</span><span>${footR}${del}</span></div>
+    </div>`;
+  }
+
   function render() {
+    const unlocked = team && tokenFor(team);
+    $('teamView').hidden = !unlocked;
+    $('pwBtn').hidden = team !== 'ALL';
+    if (!unlocked) {
+      $('grid').innerHTML = '';
+      $('empty').hidden = false;
+      $('empty').textContent = team ? 'Login to see this team.' : 'Choose a team above.';
+      return;
+    }
     renderStats();
+    renderSerials();
     const q = $('q').value.trim().toLowerCase();
     const sort = $('sort').value;
     let list = accounts.filter(a => {
+      if (selected !== null) return a.key === selected;
       const s = statusOf(a);
-      if (filter === 'RUNNING' && !(s === 'RUNNING' || s === 'READY')) return false;
+      if (filter === 'RUNNING' && !isRun(s)) return false;
       if (filter === 'BLOCKED' && s !== 'BLOCKED') return false;
-      if (filter === 'OFFLINE' && !['OFFLINE','LOGGED_OUT','UNKNOWN'].includes(s)) return false;
-      if (q && !`${displayName(a)} ${a.email} ${a.id} ${a.nickname}`.toLowerCase().includes(q)) return false;
+      if (filter === 'OFFLINE' && !isOff(s)) return false;
+      if (q && !`${a.mail} ${a.workerId} ${a.team} id-${a.serial} ${a.bpYear}`.toLowerCase().includes(q)) return false;
       return true;
     });
     const unl = a => statusOf(a) === 'BLOCKED' ? a.unlockAt : 0;
+    const tIdx = a => { const i = teams.findIndex(t => t.name === a.team); return i < 0 ? 999 : i; };
+    const bySerial = (a, b) => (team === 'ALL' ? tIdx(a) - tIdx(b) : 0) || serialNum(a) - serialNum(b);
     list.sort((a, b) => {
       if (sort === 'balance') return (b.totalBalanceCents || 0) - (a.totalBalanceCents || 0);
-      if (sort === 'name') return displayName(a).localeCompare(displayName(b));
-      if (sort === 'seen') return b.lastSeen - a.lastSeen;
-      if (sort === 'unlock') return unl(a) - unl(b) || displayName(a).localeCompare(displayName(b));
-      return ORDER[statusOf(a)] - ORDER[statusOf(b)] || unl(a) - unl(b) || displayName(a).localeCompare(displayName(b));
+      if (sort === 'unlock') return unl(a) - unl(b) || bySerial(a, b);
+      if (sort === 'status') return ORDER[statusOf(a)] - ORDER[statusOf(b)] || unl(a) - unl(b) || bySerial(a, b);
+      return bySerial(a, b);
     });
-
-    $('empty').hidden = accounts.length > 0;
-    $('grid').innerHTML = list.map(a => {
-      const s = statusOf(a);
-      let timer;
-      if (s === 'BLOCKED') timer = `<div class="timer red">${hms(a.unlockAt - now())}</div>`;
-      else if (s === 'READY') timer = `<div class="timer green">Unlocked ✓</div>`;
-      else if (s === 'RUNNING') timer = `<div class="timer green">${a.totalAvailable || 0} <span style="font-size:13px;color:var(--muted)">votes avail.</span></div>`;
-      else if (s === 'OFFLINE') timer = `<div class="timer gray">No report ${ago(now() - a.lastSeen)}</div>`;
-      else timer = `<div class="timer gray">${LABEL[s]}</div>`;
-
-      const cats = (a.categories || []).map(c =>
-        `<span class="${c.count > 0 ? 'has' : ''}">${esc(c.name)} <b>${c.count}</b></span>`).join('');
-      const sub = s === 'BLOCKED' && a.unlockAt
-        ? `Unlocks at ${new Date(a.unlockAt - serverSkew).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-        : (a.rateLimitText ? `Limit ${esc(a.rateLimitText)}` : '');
-
-      return `<div class="card ${s}">
-        <div class="row1">
-          <div><div class="name" data-alias="${esc(a.id)}" title="Click to rename">${esc(displayName(a))}</div>
-               <div class="email">${esc(a.email && a.email !== displayName(a) ? a.email : a.id)}</div></div>
-          <span class="pill ${s}">${LABEL[s]}</span>
-        </div>
-        <div class="big">${timer}
-          <div class="bal"><b>${money(a.totalBalanceCents)}</b><div>balance</div></div></div>
-        ${cats && s !== 'BLOCKED' ? `<div class="cats">${cats}</div>` : ''}
-        <div class="foot"><span>${sub || '&nbsp;'}</span>
-          <span>seen ${ago(now() - a.lastSeen)} · <a data-del="${esc(a.id)}" title="Remove from dashboard">✕</a></span></div>
-      </div>`;
-    }).join('');
+    $('empty').hidden = list.length > 0;
+    $('empty').textContent = accounts.length ? 'No IDs match.' : 'No IDs for this team in the sheet.';
+    $('grid').innerHTML = list.map(cardHtml).join('');
   }
 
-  // Alerts when an account becomes unblocked
+  /* ── alerts when an ID becomes unblocked ──────────────── */
   let audioCtx = null;
   function beep() {
     try {
@@ -249,75 +424,65 @@
   }
   function checkTransitions() {
     for (const a of accounts) {
-      const s = statusOf(a), p = prevStatus[a.id];
-      if (notifyOn && p === 'BLOCKED' && (s === 'READY' || s === 'RUNNING')) {
+      const s = statusOf(a), p = prevStatus[a.key];
+      if (notifyOn && p === 'BLOCKED' && isRun(s)) {
         beep();
-        try { if (Notification.permission === 'granted') new Notification('Account unlocked', { body: displayName(a) }); } catch (e) {}
+        try { if (Notification.permission === 'granted') new Notification('ID unlocked', { body: `${a.team} ${idLabel(a)} · ${a.mail}` }); } catch (e) {}
       }
-      prevStatus[a.id] = s;
+      prevStatus[a.key] = s;
     }
   }
 
-  async function api(path, opts = {}) {
-    const r = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', 'X-Key': KEY, ...(opts.headers || {}) } });
-    if (r.status === 401) { const e = new Error('password needed'); e.auth = true; throw e; }
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  }
-
-  async function poll() {
-    try {
-      const d = await api('/api/accounts');
-      serverSkew = d.now - Date.now();
-      accounts = d.accounts;
-      $('conn').textContent = 'updated ' + new Date().toLocaleTimeString();
-      $('conn').className = 'conn';
-      $('login').hidden = true;
-    } catch (e) {
-      if (e.auth) {
-        accounts = [];
-        $('loginErr').textContent = triedLogin ? 'Wrong password. Please try again.' : '';
-        if ($('login').hidden) { $('login').hidden = false; $('pw').value = ''; $('pw').focus(); }
-      }
-      $('conn').textContent = '⚠ ' + e.message;
-      $('conn').className = 'conn err';
-    }
-    render();
-  }
-
-  $('loginForm').addEventListener('submit', e => {
-    e.preventDefault();
-    KEY = $('pw').value.trim(); ls.set('bpvm_key', KEY); triedLogin = true;
-    $('login').hidden = true; poll();
+  /* ── events ───────────────────────────────────────────── */
+  $('teams').addEventListener('click', e => {
+    const b = e.target.closest('[data-team]'); if (b) openTeam(b.dataset.team);
   });
-  $('logoutBtn').addEventListener('click', () => {
-    ls.set('bpvm_key', ''); KEY = ''; triedLogin = false; accounts = []; poll();
-  });
-
   $('stats').addEventListener('click', e => {
     const el = e.target.closest('[data-f]'); if (!el) return;
-    filter = el.dataset.f === filter ? 'ALL' : el.dataset.f;
-    ls.set('bpvm_filter', filter); render();
+    filter = el.dataset.f === filter ? 'ALL' : el.dataset.f; selected = null; render();
+  });
+  $('serials').addEventListener('click', e => {
+    const el = e.target.closest('[data-sel]'); if (!el) return;
+    selected = el.dataset.sel === '' || el.dataset.sel === selected ? null : el.dataset.sel;
+    render();
   });
   $('grid').addEventListener('click', async e => {
-    const del = e.target.closest('[data-del]');
-    if (del) {
-      if (!confirm('Remove this account from the dashboard? (It will come back if the script reports again.)')) return;
-      await api('/api/accounts/' + encodeURIComponent(del.dataset.del), { method: 'DELETE' }).catch(() => {});
-      return poll();
-    }
-    const nm = e.target.closest('[data-alias]');
-    if (nm) {
-      const a = accounts.find(x => x.id === nm.dataset.alias);
-      const v = prompt('Dashboard name for this account (blank = use script nickname / email):', a?.alias || '');
-      if (v === null) return;
-      await api('/api/accounts/' + encodeURIComponent(nm.dataset.alias), { method: 'PATCH', body: JSON.stringify({ alias: v.trim() }) }).catch(() => {});
-      poll();
-    }
+    const del = e.target.closest('[data-del]'); if (!del) return;
+    if (!confirm('Remove this report? (It comes back if the script reports again.)')) return;
+    await fetch('/api/accounts/' + encodeURIComponent(del.dataset.del), { method: 'DELETE', headers: { 'X-Token': tokenFor('ALL') } }).catch(() => {});
+    poll();
   });
-  $('q').addEventListener('input', render);
-  $('sort').value = ls.get('bpvm_sort') || 'status';
+  $('q').addEventListener('input', () => { selected = null; render(); });
+  $('sort').value = ls.get('bpvm_sort') || 'serial';
   $('sort').addEventListener('change', () => { ls.set('bpvm_sort', $('sort').value); render(); });
+
+  /* ── admin: team passwords ────────────────────────────── */
+  function renderPwRows() {
+    const has = n => passwordTeams.some(k => k.toUpperCase() === n.toUpperCase());
+    const rows = [...teams.map(t => t.name), 'ALL'];
+    $('pwRows').innerHTML = rows.map(n => `<form class="pwrow" data-pwteam="${esc(n)}">
+        <div class="tn">${n === 'ALL' ? 'ALL ID' : esc(n)}<small class="${has(n) ? 'ok' : ''}">${has(n) ? 'password set ✓' : 'no password yet'}</small></div>
+        <input type="password" placeholder="New password" autocomplete="new-password" minlength="6" required>
+        <button type="submit">Save</button></form>`).join('');
+  }
+  $('pwBtn').addEventListener('click', () => { $('pwMsg').textContent = ''; renderPwRows(); $('pwPanel').hidden = false; });
+  $('pwClose').addEventListener('click', () => { $('pwPanel').hidden = true; });
+  $('pwRows').addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = e.target.closest('[data-pwteam]'), n = f.dataset.pwteam, inp = f.querySelector('input');
+    try {
+      const r = await fetch('/api/admin/password', { method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Token': tokenFor('ALL') },
+        body: JSON.stringify({ team: n, password: inp.value }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { $('pwMsg').style.color = 'var(--red)'; $('pwMsg').textContent = d.error || 'Error'; return; }
+      if (d.token) ls.set(tokKey('ALL'), d.token);
+      if (!passwordTeams.some(k => k.toUpperCase() === n.toUpperCase())) passwordTeams.push(n);
+      renderPwRows();
+      $('pwMsg').style.color = 'var(--green)';
+      $('pwMsg').textContent = `Saved password for ${n === 'ALL' ? 'ALL ID' : n}.`;
+    } catch (err) { $('pwMsg').style.color = 'var(--red)'; $('pwMsg').textContent = 'Server not reachable'; }
+  });
 
   function paintNotify() { $('notifyBtn').textContent = notifyOn ? '🔔 Alerts: on' : '🔕 Alerts: off'; }
   $('notifyBtn').addEventListener('click', async () => {
@@ -326,9 +491,10 @@
   });
   paintNotify();
 
-  poll();
+  loadTeams().then(() => { if (team) openTeam(team); else render(); });
+  setInterval(loadTeams, 60000);
   setInterval(poll, POLL_MS);
-  setInterval(() => { render(); checkTransitions(); }, 1000);
+  setInterval(() => { if (team && tokenFor(team)) { render(); checkTransitions(); } }, 1000);
 })();
 </script>
 </body>
