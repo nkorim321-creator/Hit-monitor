@@ -1,7 +1,8 @@
 // ==UserScript==
 // @name        BP Worker Vote Monitor (Multi-Account Reporter)
+// Works in Tampermonkey and Violentmonkey.
 // @namespace   https://www.bpworker.com/
-// @version     1.3
+// @version     1.4
 // @description Reads the bpworker.com /vote page (Running / Blocked, unlock time, balance, available votes) and reports it to your Vote Monitor server so all accounts show on one dashboard.
 // @match       https://www.bpworker.com/*
 // @match       https://bpworker.com/*
@@ -22,7 +23,8 @@
   /* ── CONFIG ─────────────────────────────────────────────
      SERVER_URL / SECRET can also be changed from the Tampermonkey
      menu ("⚙ Set server URL" / "🔑 Set secret key"), per browser. */
-  const DEFAULT_SERVER_URL = 'http://50.117.3.240:3100';
+  const DEFAULT_SERVER_URL = 'http://50.117.3.240';            // port 80: passes through proxies
+  const DEFAULT_SERVER_URLS = [DEFAULT_SERVER_URL, 'http://50.117.3.240:3100'];  // tried in this order
   const DEFAULT_SECRET     = '';          // same as SECRET on the server (optional)
   const CHECK_EVERY_MS     = 60 * 1000;   // how often to re-read /vote
   const VOTE_URL           = location.origin + '/vote';
@@ -39,11 +41,19 @@
   // A saved URL from an older version that still points to an old server → use the current default
   (function migrateSavedUrl() {
     const saved = GM_getValue('serverUrl', '');
-    if (saved && OLD_SERVER_HOSTS.some(h => saved.includes(h))) GM_setValue('serverUrl', DEFAULT_SERVER_URL);
+    // Old server, or the old default with :3100 → use the automatic list (port 80 first, then 3100)
+    if (saved && (OLD_SERVER_HOSTS.some(h => saved.includes(h)) || DEFAULT_SERVER_URLS.includes(cleanUrl(saved)))) GM_setValue('serverUrl', '');
   })();
 
   const cfg = {
-    get server()   { return cleanUrl(GM_getValue('serverUrl', DEFAULT_SERVER_URL)) || DEFAULT_SERVER_URL; },
+    // A URL set from the menu is used alone; otherwise the default list, last working one first
+    get servers() {
+      const custom = cleanUrl(GM_getValue('serverUrl', ''));
+      if (custom) return [custom];
+      const w = GM_getValue('workingUrl', '');
+      return DEFAULT_SERVER_URLS.includes(w) ? [w, ...DEFAULT_SERVER_URLS.filter(u => u !== w)] : DEFAULT_SERVER_URLS;
+    },
+    get server() { return this.servers[0]; },
     get secret()   { return GM_getValue('secret', DEFAULT_SECRET) || ''; },
     get nickname() { return GM_getValue('nickname', '') || ''; },
   };
@@ -53,8 +63,8 @@
     if (v !== null) { GM_setValue('nickname', v.trim()); checkNow(); }
   });
   GM_registerMenuCommand('⚙ Set server URL', () => {
-    const v = prompt('Vote Monitor server URL (blank = default ' + DEFAULT_SERVER_URL + '):', cfg.server);
-    if (v !== null) { GM_setValue('serverUrl', cleanUrl(v) || DEFAULT_SERVER_URL); checkNow(); }
+    const v = prompt('Vote Monitor server URL (leave blank = automatic: ' + DEFAULT_SERVER_URLS.join(' then ') + '):', GM_getValue('serverUrl', ''));
+    if (v !== null) { GM_setValue('serverUrl', cleanUrl(v)); checkNow(); }
   });
   GM_registerMenuCommand('🔑 Set secret key', () => {
     const v = prompt('Secret key (must match server SECRET, blank if none):', cfg.secret);
@@ -109,19 +119,24 @@
   }
 
   /* ── NETWORK ─────────────────────────────────────────── */
-  // Resolves to { ok: true } or { ok: false, why: '...' }
-  function send(method, path, payload) {
+  // One request to one URL. Resolves to { ok: true } or { ok: false, why: '...' }
+  function sendOnce(base, method, path, payload) {
     return new Promise(resolve => {
-      const url = cfg.server + path;
+      const url = base + path;
       try {
         GM_xmlhttpRequest({
           method, url,
           headers: { 'Content-Type': 'application/json', 'X-Key': cfg.secret },
           data: payload ? JSON.stringify(payload) : undefined,
           timeout: 15000,
-          onload: r => resolve(r.status >= 200 && r.status < 300
-            ? { ok: true }
-            : { ok: false, why: 'server answered HTTP ' + r.status + (r.status === 0 ? ' (blocked by Tampermonkey?)' : '') }),
+          onload: r => {
+            if (r.status >= 200 && r.status < 300) return resolve({ ok: true });
+            const ours = /x-bp-vote-monitor/i.test(r.responseHeaders || '');
+            const body = String(r.responseText || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+            resolve({ ok: false, status: r.status, why: ours
+              ? `server answered HTTP ${r.status}${body ? ': ' + body : ''}`
+              : `HTTP ${r.status} from something between this browser and the server (proxy/VPN/firewall), not from the Vote Monitor server${body ? ' — "' + body + '"' : ''}` });
+          },
           onerror: r => resolve({ ok: false, why: 'cannot connect' + (r && r.error ? ' (' + r.error + ')' : '') }),
           ontimeout: () => resolve({ ok: false, why: 'no answer in 15 s (timeout)' }),
           onabort: () => resolve({ ok: false, why: 'request blocked/aborted' }),
@@ -131,23 +146,36 @@
       }
     });
   }
+  // Try each server URL (port 80 first, then 3100) and remember the one that works
+  let usedUrl = '';
+  async function send(method, path, payload) {
+    const tried = [], fails = [];
+    for (const base of cfg.servers) {
+      const r = await sendOnce(base, method, path, payload);
+      if (r.ok) { usedUrl = base; if (!GM_getValue('serverUrl', '')) GM_setValue('workingUrl', base); return r; }
+      tried.push(`${base} → ${r.why}`); fails.push(r);
+    }
+    return { ok: false, why: tried.join(' | '), tried, fails };
+  }
   const report = payload => send('POST', '/api/report', payload);
 
   async function testConnection() {
     const r = await send('GET', '/api/teams');
     if (r.ok) {
-      alert('✅ Server connection OK\n\n' + cfg.server + '\n\nThis account can report to the dashboard.');
+      alert('✅ Server connection OK\n\n' + usedUrl + '\n\nThis account can report to the dashboard.');
       checkNow();
       return;
     }
-    alert('❌ Cannot reach the Vote Monitor server\n\n' +
-      'URL: ' + cfg.server + '\nReason: ' + r.why + '\n\n' +
-      'Check:\n' +
-      '1. Open ' + cfg.server + ' in this same browser. Does the dashboard open?\n' +
-      '   - No → the server is off or port 3100 is blocked for this PC/VPS.\n' +
-      '2. Is the URL right? Change it: Tampermonkey menu → "⚙ Set server URL".\n' +
-      '3. Tampermonkey may have asked to allow the connection. Choose "Always allow".\n' +
-      '   (Tampermonkey Dashboard → this script → Settings → "Allowed domains/Whitelist")');
+    const proxy = /proxy\/VPN\/firewall/.test(r.why);
+    alert('❌ Cannot reach the Vote Monitor server\n\n' + r.tried.join('\n\n') + '\n\n' +
+      (proxy
+        ? 'The block comes from the proxy/VPN this browser uses, not from the server.\n' +
+          'Fix: in the proxy/VPN settings, allow (bypass) the IP 50.117.3.240, or ask the proxy seller to allow port 80/3100.\n'
+        : 'Check:\n' +
+          '1. Open ' + DEFAULT_SERVER_URL + ' in this same browser. Does the dashboard open?\n' +
+          '   No → the server is off, or this PC/proxy cannot reach it.\n' +
+          '2. Script menu → "⚙ Set server URL": leave it blank for automatic.\n') +
+      '\nViolentmonkey needs no "allow" step. In Tampermonkey choose "Always allow" if it asks.');
   }
 
   /* ── BADGE ───────────────────────────────────────────── */
@@ -211,9 +239,10 @@
       const icon  = { RUNNING: '🟢', BLOCKED: '🔴', LOGGED_OUT: '⚪' }[s.state] || '🟡';
       const color = { RUNNING: '#22c55e', BLOCKED: '#ef4444' }[s.state] || '#fbbf24';
       if (sent.ok) {
-        setBadge(color, `${icon} ${s.state}  ·  synced ${new Date().toLocaleTimeString()}`);
+        setBadge(color, `${icon} ${s.state}  ·  synced ${new Date().toLocaleTimeString()}  ·  ${usedUrl.replace(/^https?:\/\//, '')}`);
       } else {
-        setBadge('#f59e0b', `${icon} ${s.state}  ·  ⚠ not sent: ${sent.why}  ·  ${cfg.server}  (click to test)`);
+        const short = sent.fails.map(f => /proxy\/VPN\/firewall/.test(f.why) ? `HTTP ${f.status} from proxy/VPN` : f.why.slice(0, 50)).join(' / ');
+        setBadge('#f59e0b', `${icon} ${s.state}  ·  ⚠ not sent: ${short}  (click for details)`);
         nextMs = Math.min(nextMs, 15000);   // retry soon
       }
     } catch (e) {

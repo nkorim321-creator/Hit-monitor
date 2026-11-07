@@ -2,7 +2,7 @@
 REM ============================================================
 REM  BP Vote Monitor - Windows installer
 REM  Right-click -> "Run as administrator"
-REM  - opens port 3100 in Windows Firewall
+REM  - opens ports 3100 and 80 in Windows Firewall
 REM  - creates a startup task so the server runs after every reboot
 REM  - starts the server now
 REM ============================================================
@@ -45,13 +45,13 @@ set "ADMINPW="
 (
   echo @echo off
   echo cd /d "%~dp0"
-  echo set PORT=3100
+  echo set PORTS=3100,80
   echo "%NODE%" "%~dp0server.js" ^>^> server.log 2^>^&1
 ) > run-server.bat
 
 netsh advfirewall firewall delete rule name="BP Vote Monitor" >nul 2>&1
-netsh advfirewall firewall add rule name="BP Vote Monitor" dir=in action=allow protocol=TCP localport=3100 >nul
-echo  Firewall: port 3100 opened.
+netsh advfirewall firewall add rule name="BP Vote Monitor" dir=in action=allow protocol=TCP localport=3100,80 >nul
+echo  Firewall: ports 3100 and 80 opened.
 
 schtasks /end /tn "BP Vote Monitor" >nul 2>&1
 powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*%~dp0server.js*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>&1
@@ -63,7 +63,7 @@ timeout /t 3 >nul
 echo.
 echo  ======================================================
 echo   Done! Open the dashboard:  http://localhost:3100
-echo   From other PCs:            http://50.117.3.240:3100
+echo   From other PCs:            http://50.117.3.240   (or http://50.117.3.240:3100)
 echo   Passwords are in passwords.json (change with set-password.js)
 echo   Log file: %~dp0server.log
 echo  ======================================================

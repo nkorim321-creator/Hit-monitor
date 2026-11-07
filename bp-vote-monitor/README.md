@@ -49,7 +49,7 @@ Shob shomoy chalu rakhte (pm2 thakle):
 pm2 start server.js --name bp-vote-monitor
 ```
 
-Firewall e port **3100** open rakhte hobe.
+Firewall e port **80** ar **3100** open rakhte hobe.
 
 ### 2. Script install (proti account er browser e)
 
@@ -60,7 +60,7 @@ Firewall e port **3100** open rakhte hobe.
 
 ### 3. Dashboard
 
-Browser e `http://50.117.3.240:3100` kholo.
+Browser e `http://50.117.3.240` (ba `http://50.117.3.240:3100`) kholo. Server port 80 ar 3100 duitai shone.
 
 - Upore **team button** (Google Sheet theke ashe): NOUSHAD, SUJON, Hirexology, Bhiya Self, ar **ALL ID** (shudhu admin).
 - Team e click korle oi team er password chay. Ekbar dile oi browser e ar chay na (**🔒 Logout** dile abar chaibe).

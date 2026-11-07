@@ -11,7 +11,10 @@ const fs     = require('fs');
 const path   = require('path');
 const crypto = require('crypto');
 
-const PORT      = parseInt(process.env.PORT || '3100', 10);
+// Listens on 3100 and also on 80. Port 80 is plain web traffic, which proxies and VPNs let through
+// even when they block unusual ports like 3100. PORTS=3100 turns port 80 off.
+const PORTS     = String(process.env.PORTS || process.env.PORT || '3100,80')
+  .split(',').map(x => parseInt(x, 10)).filter(Boolean);
 const SHEET_ID  = process.env.SHEET_ID || '1xj9B7ymrRoWIoxT4v0x4z6So8Qgj1oCMS42TujA9rus';
 const SHEET_GID = process.env.SHEET_GID || '0';
 const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`;
@@ -323,6 +326,7 @@ function send(res, code, body, type = 'application/json') {
     'Access-Control-Allow-Headers': 'Content-Type, X-Token',
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Cache-Control': 'no-store',
+    'X-BP-Vote-Monitor': '1',          // lets the account script tell our answers from a proxy's
   });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
@@ -338,7 +342,7 @@ function readBody(req) {
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
 
-http.createServer(async (req, res) => {
+const server = async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
   const ip = req.socket.remoteAddress || '';
@@ -427,7 +431,18 @@ http.createServer(async (req, res) => {
     if (err) return send(res, 404, 'not found', 'text/plain');
     send(res, 200, buf, MIME[path.extname(file)] || 'application/octet-stream');
   });
-}).listen(PORT, () => {
-  console.log(`BP Vote Monitor running → http://localhost:${PORT}`);
-  if (!passwords.ALL) console.log('WARNING: no admin password yet. Run install-windows.bat, or: node set-password.js ALL "yourpassword"');
-});
+};
+
+let listening = 0;
+for (const port of PORTS) {
+  const srv = http.createServer(server);
+  srv.on('error', e => {
+    // e.g. port 80 already used by another program, or not allowed: keep running on the other port(s)
+    console.log(`Port ${port} not available (${e.code || e.message}).`);
+  });
+  srv.listen(port, () => {
+    listening++;
+    console.log(`BP Vote Monitor running → http://localhost${port === 80 ? '' : ':' + port}`);
+  });
+}
+if (!passwords.ALL) console.log('WARNING: no admin password yet. Run install-windows.bat, or: node set-password.js ALL "yourpassword"');
