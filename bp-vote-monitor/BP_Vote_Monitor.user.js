@@ -2,7 +2,7 @@
 // @name        BP Worker Vote Monitor (Multi-Account Reporter)
 // Works in Tampermonkey and Violentmonkey.
 // @namespace   https://www.bpworker.com/
-// @version     1.5
+// @version     1.6
 // @description Reads the bpworker.com /vote page (Running / Blocked, unlock time, balance, available votes) and reports it to your Vote Monitor server so all accounts show on one dashboard.
 // @match       https://www.bpworker.com/*
 // @match       https://bpworker.com/*
@@ -184,7 +184,7 @@
     if (!badge) {
       badge = document.createElement('div');
       Object.assign(badge.style, {
-        position: 'fixed', bottom: '220px', right: '12px', zIndex: 2147483640,
+        position: 'fixed', bottom: '14px', right: '64px', zIndex: 2147483640,
         background: '#0b1220', color: '#cbd5e1', border: '1px solid #1e3a5f',
         borderRadius: '8px', padding: '6px 12px', font: '11px/1.5 monospace',
         boxShadow: '0 4px 18px rgba(0,0,0,.35)', cursor: 'pointer', maxWidth: '420px',
