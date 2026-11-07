@@ -32,9 +32,9 @@ echo  Node found: %NODE%
 echo.
 :askpw
 set "SECRET="
-set /p "SECRET=Dashboard password dao (shudhu letter/number, jemon bp2026): "
+set /p "SECRET=Set a dashboard password (letters/numbers only, e.g. bp2026): "
 if not defined SECRET (
-  echo  Password khali rakha jabe na.
+  echo  Password cannot be empty.
   goto askpw
 )
 

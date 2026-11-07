@@ -108,7 +108,7 @@
 <div id="login" hidden>
   <form id="loginForm" autocomplete="on">
     <h2>🔒 BP Vote Monitor</h2>
-    <p>Dashboard dekhte password dao</p>
+    <p>Enter password to open the dashboard</p>
     <input type="text" name="username" value="bp-vote-monitor" autocomplete="username" hidden>
     <input id="pw" type="password" placeholder="Password" autocomplete="current-password" required>
     <button type="submit">Login</button>
@@ -276,7 +276,7 @@
     } catch (e) {
       if (e.auth) {
         accounts = [];
-        $('loginErr').textContent = triedLogin ? 'Password bhul hoyeche, abar try koro' : '';
+        $('loginErr').textContent = triedLogin ? 'Wrong password. Please try again.' : '';
         if ($('login').hidden) { $('login').hidden = false; $('pw').value = ''; $('pw').focus(); }
       }
       $('conn').textContent = '⚠ ' + e.message;
