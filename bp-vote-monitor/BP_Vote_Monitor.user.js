@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        BP Worker Vote Monitor (Multi-Account Reporter)
 // @namespace   https://www.bpworker.com/
-// @version     1.1
+// @version     1.3
 // @description Reads the bpworker.com /vote page (Running / Blocked, unlock time, balance, available votes) and reports it to your Vote Monitor server so all accounts show on one dashboard.
 // @match       https://www.bpworker.com/*
 // @match       https://bpworker.com/*
@@ -27,8 +27,23 @@
   const CHECK_EVERY_MS     = 60 * 1000;   // how often to re-read /vote
   const VOTE_URL           = location.origin + '/vote';
 
+  const OLD_SERVER_HOSTS   = ['38.58.179.188'];   // old servers: a saved URL pointing here is replaced
+
+  // Clean up a server URL: add http://, drop spaces, trailing "/" and a pasted "/api/..." path
+  function cleanUrl(u) {
+    u = String(u || '').trim().replace(/\s+/g, '');
+    if (!u) return '';
+    if (!/^https?:\/\//i.test(u)) u = 'http://' + u;
+    return u.replace(/\/api(\/.*)?$/i, '').replace(/\/+$/, '');
+  }
+  // A saved URL from an older version that still points to an old server → use the current default
+  (function migrateSavedUrl() {
+    const saved = GM_getValue('serverUrl', '');
+    if (saved && OLD_SERVER_HOSTS.some(h => saved.includes(h))) GM_setValue('serverUrl', DEFAULT_SERVER_URL);
+  })();
+
   const cfg = {
-    get server()   { return (GM_getValue('serverUrl', DEFAULT_SERVER_URL) || '').replace(/\/+$/, ''); },
+    get server()   { return cleanUrl(GM_getValue('serverUrl', DEFAULT_SERVER_URL)) || DEFAULT_SERVER_URL; },
     get secret()   { return GM_getValue('secret', DEFAULT_SECRET) || ''; },
     get nickname() { return GM_getValue('nickname', '') || ''; },
   };
@@ -38,14 +53,15 @@
     if (v !== null) { GM_setValue('nickname', v.trim()); checkNow(); }
   });
   GM_registerMenuCommand('⚙ Set server URL', () => {
-    const v = prompt('Vote Monitor server URL:', cfg.server);
-    if (v !== null) { GM_setValue('serverUrl', v.trim()); checkNow(); }
+    const v = prompt('Vote Monitor server URL (blank = default ' + DEFAULT_SERVER_URL + '):', cfg.server);
+    if (v !== null) { GM_setValue('serverUrl', cleanUrl(v) || DEFAULT_SERVER_URL); checkNow(); }
   });
   GM_registerMenuCommand('🔑 Set secret key', () => {
     const v = prompt('Secret key (must match server SECRET, blank if none):', cfg.secret);
     if (v !== null) { GM_setValue('secret', v.trim()); checkNow(); }
   });
   GM_registerMenuCommand('🔄 Check now', () => checkNow());
+  GM_registerMenuCommand('🩺 Test server connection', () => testConnection());
 
   /* ── PARSER: turns /vote HTML into a status object ───── */
   function parseVoteHtml(html) {
@@ -93,20 +109,45 @@
   }
 
   /* ── NETWORK ─────────────────────────────────────────── */
-  function report(payload) {
+  // Resolves to { ok: true } or { ok: false, why: '...' }
+  function send(method, path, payload) {
     return new Promise(resolve => {
-      if (!cfg.server) return resolve(false);
-      GM_xmlhttpRequest({
-        method: 'POST',
-        url: cfg.server + '/api/report',
-        headers: { 'Content-Type': 'application/json', 'X-Key': cfg.secret },
-        data: JSON.stringify(payload),
-        timeout: 12000,
-        onload: r => resolve(r.status >= 200 && r.status < 300),
-        onerror: () => resolve(false),
-        ontimeout: () => resolve(false),
-      });
+      const url = cfg.server + path;
+      try {
+        GM_xmlhttpRequest({
+          method, url,
+          headers: { 'Content-Type': 'application/json', 'X-Key': cfg.secret },
+          data: payload ? JSON.stringify(payload) : undefined,
+          timeout: 15000,
+          onload: r => resolve(r.status >= 200 && r.status < 300
+            ? { ok: true }
+            : { ok: false, why: 'server answered HTTP ' + r.status + (r.status === 0 ? ' (blocked by Tampermonkey?)' : '') }),
+          onerror: r => resolve({ ok: false, why: 'cannot connect' + (r && r.error ? ' (' + r.error + ')' : '') }),
+          ontimeout: () => resolve({ ok: false, why: 'no answer in 15 s (timeout)' }),
+          onabort: () => resolve({ ok: false, why: 'request blocked/aborted' }),
+        });
+      } catch (e) {
+        resolve({ ok: false, why: 'bad server URL: ' + url });
+      }
     });
+  }
+  const report = payload => send('POST', '/api/report', payload);
+
+  async function testConnection() {
+    const r = await send('GET', '/api/teams');
+    if (r.ok) {
+      alert('✅ Server connection OK\n\n' + cfg.server + '\n\nThis account can report to the dashboard.');
+      checkNow();
+      return;
+    }
+    alert('❌ Cannot reach the Vote Monitor server\n\n' +
+      'URL: ' + cfg.server + '\nReason: ' + r.why + '\n\n' +
+      'Check:\n' +
+      '1. Open ' + cfg.server + ' in this same browser. Does the dashboard open?\n' +
+      '   - No → the server is off or port 3100 is blocked for this PC/VPS.\n' +
+      '2. Is the URL right? Change it: Tampermonkey menu → "⚙ Set server URL".\n' +
+      '3. Tampermonkey may have asked to allow the connection. Choose "Always allow".\n' +
+      '   (Tampermonkey Dashboard → this script → Settings → "Allowed domains/Whitelist")');
   }
 
   /* ── BADGE ───────────────────────────────────────────── */
@@ -118,8 +159,10 @@
         position: 'fixed', bottom: '12px', right: '12px', zIndex: 2147483640,
         background: '#0b1220', color: '#cbd5e1', border: '1px solid #1e3a5f',
         borderRadius: '8px', padding: '6px 12px', font: '11px/1.5 monospace',
-        boxShadow: '0 4px 18px rgba(0,0,0,.35)', pointerEvents: 'none',
+        boxShadow: '0 4px 18px rgba(0,0,0,.35)', cursor: 'pointer', maxWidth: '420px',
       });
+      badge.title = 'Click to test the server connection';
+      badge.addEventListener('click', testConnection);
       document.body.appendChild(badge);
     }
     badge.style.borderColor = color;
@@ -145,7 +188,7 @@
       const id = s.workerKey || GM_getValue('lastWorkerKey', '') || GM_getValue('lastEmail', '');
       if (!id) { setBadge('#fbbf24', '⚠ Vote Monitor: account not detected'); return; }
 
-      const ok = await report({
+      const sent = await report({
         id,
         email: s.email || GM_getValue('lastEmail', ''),
         nickname: cfg.nickname,
@@ -167,8 +210,12 @@
 
       const icon  = { RUNNING: '🟢', BLOCKED: '🔴', LOGGED_OUT: '⚪' }[s.state] || '🟡';
       const color = { RUNNING: '#22c55e', BLOCKED: '#ef4444' }[s.state] || '#fbbf24';
-      setBadge(ok ? color : '#f59e0b',
-        `${icon} ${s.state}  ·  ${ok ? 'synced ' + new Date().toLocaleTimeString() : '⚠ server unreachable'}`);
+      if (sent.ok) {
+        setBadge(color, `${icon} ${s.state}  ·  synced ${new Date().toLocaleTimeString()}`);
+      } else {
+        setBadge('#f59e0b', `${icon} ${s.state}  ·  ⚠ not sent: ${sent.why}  ·  ${cfg.server}  (click to test)`);
+        nextMs = Math.min(nextMs, 15000);   // retry soon
+      }
     } catch (e) {
       setBadge('#f59e0b', '⚠ Vote Monitor error: ' + (e && e.message || e));
     } finally {
