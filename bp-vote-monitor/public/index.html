@@ -122,6 +122,8 @@
   .earn-top input[type=datetime-local] { padding: 5px 8px; color-scheme: dark; }
   #customRange { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   #customRange label { font-size: 12px; color: var(--muted); }
+  #customRange .dt { display: inline-flex; gap: 6px; align-items: center; }
+  #customRange label { min-width: 32px; }
   .etotal { text-align: right; }
   .etotal b { font-size: 22px; color: var(--green); font-variant-numeric: tabular-nums; }
   .etotal div { font-size: 11px; color: var(--muted); }
@@ -143,6 +145,17 @@
   .earned { font-size: 12px; color: var(--green); margin-top: 2px; font-variant-numeric: tabular-nums; }
   .earned.zero { color: var(--muted); }
   @media (max-width: 480px) { .etotal { text-align: left; width: 100%; } .day { grid-template-columns: 120px 1fr 56px; font-size: 11px; } }
+  @media (max-width: 480px) {
+    header { padding: 10px; }
+    h1 { font-size: 16px; }
+    .teams { gap: 6px; margin-top: 8px; }
+    .team { padding: 6px 10px; font-size: 13px; }
+    .stats { grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+    .stat { padding: 6px 8px; }
+    .stat .n { font-size: 17px; }
+    .stat .l { font-size: 9px; letter-spacing: .3px; }
+    .tools input { min-width: 0; flex-basis: 100%; }
+  }
   @media (max-width: 480px) { header { position: static; } main { padding: 10px; } .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -176,8 +189,6 @@
     <div class="earn-top">
       <span class="et">💰 Earnings</span>
       <select id="period">
-        <option value="1h">Last 1 hour</option>
-        <option value="3h">Last 3 hours</option>
         <option value="today">Today</option>
         <option value="yesterday">Yesterday</option>
         <option value="7d">Last 7 days</option>
@@ -185,7 +196,7 @@
         <option value="30d">Last 30 days</option>
         <option value="custom">Custom date &amp; time…</option>
       </select>
-      <span id="customRange" hidden><label for="dFrom">From</label><input type="datetime-local" id="dFrom"><label for="dTo">To</label><input type="datetime-local" id="dTo"></span>
+      <span id="customRange" hidden><span class="dt"><label for="dFrom">From</label><input type="datetime-local" id="dFrom"></span><span class="dt"><label for="dTo">To</label><input type="datetime-local" id="dTo"></span></span>
       <div class="spacer"></div>
       <div class="etotal"><b id="earnTotal">—</b><div id="earnSub"></div></div>
     </div>
@@ -193,7 +204,6 @@
     <button class="dtoggle" id="detToggle">▸ Show A–Z details per ID</button>
     <div class="dwrap" id="earnDetails" hidden></div>
     <div class="enote" id="earnNote"></div>
-  </section>
   </section>
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty">Choose a team above.</div>
@@ -236,7 +246,7 @@
   let teams = [], team = ls.get('bpvm_team') || '', accounts = [], serverSkew = 0;
   let filter = 'ALL', selected = null, notifyOn = ls.get('bpvm_notify') === '1', passwordTeams = [];
   let serialsOpen = ls.get('bpvm_serials') !== '0';
-  let earnRows = [], earnSince = 0, earnApproxUntil = 0, earnRange = null, earnErr = '', earnBucket = 'hour';
+  let earnLoading = false, earnRows = [], earnSince = 0, earnApproxUntil = 0, earnRange = null, earnErr = '', earnBucket = 'hour';
   let detailsOpen = ls.get('bpvm_details') === '1';
   const prevStatus = {};
 
@@ -344,10 +354,21 @@
       }
       const d = await r.json();
       serverSkew = d.now - Date.now();
-      accounts = d.accounts || [];
+      const fresh = d.accounts || [];
+      // If only "last seen" times changed, just update those numbers (no page rebuild)
+      const sigOf = list => JSON.stringify(list.map(a => ({ ...a, lastSeen: 0 })));
+      const onlySeen = fresh.length === accounts.length && sigOf(fresh) === sigOf(accounts);
+      accounts = fresh;
       if (d.passwordTeams) passwordTeams = d.passwordTeams;
       $('conn').textContent = d.sheetError ? '⚠ Sheet: ' + d.sheetError : 'updated ' + new Date().toLocaleTimeString();
       $('conn').className = d.sheetError ? 'conn err' : 'conn';
+      if (onlySeen && statusSig() === lastSig) {
+        for (const a of accounts) {
+          const el = document.querySelector(`[data-key="${CSS.escape(a.key)}"] [data-seen]`);
+          if (el) { el.dataset.seen = a.lastSeen; el.textContent = 'seen ' + ago(now() - a.lastSeen); }
+        }
+        return;
+      }
     } catch (e) {
       $('conn').textContent = '⚠ server not reachable';
       $('conn').className = 'conn err';
@@ -402,7 +423,7 @@
   /* ── earnings & time-range report ──────────────────────── */
   const HOUR = 3600000, DAY = 86400000;
   const dayStart = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const PERIOD_LABEL = { '1h': 'last hour', '3h': 'last 3 hours', today: 'today', yesterday: 'yesterday',
+  const PERIOD_LABEL = { today: 'today', yesterday: 'yesterday',
                          '7d': 'last 7 days', month: 'this month', '30d': 'last 30 days', custom: 'in range' };
   const pad = n => String(n).padStart(2, '0');
   const toInput = t => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
@@ -419,8 +440,6 @@
 
   function periodRange() {
     const p = $('period').value, n = new Date(), today = dayStart(n), t = now();
-    if (p === '1h') return [t - HOUR, t + 60000];
-    if (p === '3h') return [t - 3 * HOUR, t + 60000];
     if (p === 'today') return [today, t + 60000];
     if (p === 'yesterday') return [dayStart(new Date(today - DAY / 2)), today];
     if (p === '7d') return [dayStart(new Date(today - 6 * DAY + DAY / 2)), t + 60000];
@@ -437,8 +456,10 @@
     const range = periodRange();
     earnRange = range;
     if (!range) { earnRows = []; earnErr = 'Choose a start and an end time (end after start)'; renderEarnings(); return; }
-    earnBucket = range[1] - range[0] <= 2 * DAY ? 'hour' : 'day';
+    const newBucket = range[1] - range[0] <= 2 * DAY ? 'hour' : 'day';
     const asked = team;
+    if (!earnRows.length || newBucket !== earnBucket) { earnLoading = true; renderEarnings(); }
+    earnBucket = newBucket;
     try {
       const q = `team=${encodeURIComponent(team)}&from=${range[0]}&to=${range[1]}&tz=${new Date().getTimezoneOffset()}&bucket=${earnBucket}`;
       const r = await fetch('/api/earnings?' + q, { headers: { 'X-Token': tokenFor(team) } });
@@ -446,10 +467,13 @@
       if (!r.ok) { earnErr = 'Could not load earnings'; earnRows = []; }
       else {
         const d = await r.json();
-        earnRows = d.rows || []; earnSince = d.trackingSince || 0; earnApproxUntil = d.approxUntil || 0; earnErr = '';
+        const same = !earnLoading && !earnErr && JSON.stringify(d.rows || []) === JSON.stringify(earnRows);
+        earnRows = d.rows || [];
+        if (same) return; earnSince = d.trackingSince || 0; earnApproxUntil = d.approxUntil || 0; earnErr = '';
       }
     } catch (e) { earnErr = 'Server not reachable'; }
-    renderEarnings(); render();
+    earnLoading = false;
+    render();
   }
 
   function earnedFor(key) { const r = earnRows.find(x => x.key === key); return r ? r.earned : 0; }
@@ -462,6 +486,7 @@
   function renderEarnings() {
     const custom = $('period').value === 'custom';
     $('customRange').hidden = !custom;
+    if (earnLoading && !earnErr) { $('earnTotal').textContent = '…'; $('earnSub').textContent = 'Loading…'; return; }
     if (earnErr || !earnRange) {
       $('earnTotal').textContent = '—'; $('earnSub').textContent = earnErr; $('earnDays').innerHTML = '';
       $('earnDetails').innerHTML = ''; return;
@@ -525,11 +550,13 @@
           <td class="mu" style="white-space:nowrap">${r.firstSeen ? fmtTime(r.firstSeen) + ' – ' + fmtTime(r.lastSeen) : '—'}</td>
           <td style="white-space:nowrap">${LABEL[s]}</td></tr>`;
       }).join('');
+      const keepScroll = $('earnDetails').scrollLeft;
       $('earnDetails').innerHTML = `<table class="det"><thead><tr>
         <th>ID</th><th>Mail</th><th>Earned</th><th>Collected</th><th>Blocked</th><th>Blocked at → unlock</th>
         <th>Script online</th><th>Reports</th><th>Now</th></tr></thead><tbody>${body}
         <tr class="tot"><td colspan="2">Total (${list.length} IDs)</td><td class="n g">${money(tb)}</td><td class="n">${money(tc)}</td>
         <td class="n">${tbl ? dur(tbl) : '—'}</td><td colspan="4"></td></tr></tbody></table>`;
+      $('earnDetails').scrollLeft = keepScroll;
     }
 
     // Honest notes about what the numbers are based on
@@ -544,7 +571,7 @@
   function cardHtml(a) {
     const s = statusOf(a);
     let timer;
-    if (s === 'BLOCKED') timer = `<div class="timer red">${hms(a.unlockAt - now())}</div>`;
+    if (s === 'BLOCKED') timer = a.unlockAt ? `<div class="timer red" data-unlock="${a.unlockAt}">${hms(a.unlockAt - now())}</div>` : `<div class="timer red">Blocked</div>`;
     else if (s === 'READY') timer = `<div class="timer green">Unlocked ✓</div>`;
     else if (s === 'RUNNING') timer = `<div class="timer green">${a.totalAvailable || 0} <span style="font-size:13px;color:var(--muted)">votes avail.</span></div>`;
     else if (s === 'OFFLINE') timer = `<div class="timer gray">No report ${ago(now() - a.lastSeen)}</div>`;
@@ -556,10 +583,10 @@
     const footL = s === 'BLOCKED' && a.unlockAt
       ? `Unlocks at ${new Date(a.unlockAt - serverSkew).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
       : (a.rateLimitText ? `Limit ${esc(a.rateLimitText)}` : '');
-    const footR = a.reported ? `seen ${ago(now() - a.lastSeen)}` : '';
+    const footR = a.reported ? `<span data-seen="${a.lastSeen}">seen ${ago(now() - a.lastSeen)}</span>` : '';
     const del = team === 'ALL' && a.accountId ? ` · <a data-del="${esc(a.accountId)}" title="Remove this report">✕</a>` : '';
 
-    return `<div class="card ${s}">
+    return `<div class="card ${s}" data-key="${esc(a.key)}">
       <div class="row1">
         <div style="min-width:0">
           <div class="idline">
@@ -617,6 +644,19 @@
     $('empty').hidden = list.length > 0;
     $('empty').textContent = accounts.length ? 'No IDs match.' : 'No IDs for this team in the sheet.';
     $('grid').innerHTML = list.map(cardHtml).join('');
+    lastSig = statusSig();
+  }
+
+  // Every second: only update the countdowns and "seen … ago" text.
+  // The whole page is rebuilt only when a status changes (e.g. blocked → unlocked).
+  let lastSig = '';
+  const statusSig = () => team + '|' + accounts.map(statusOf).join(',');
+  function tick() {
+    if (!team || !tokenFor(team)) return;
+    checkTransitions();
+    if (statusSig() !== lastSig) { render(); return; }
+    for (const el of document.querySelectorAll('[data-unlock]')) el.textContent = hms(Number(el.dataset.unlock) - now());
+    for (const el of document.querySelectorAll('[data-seen]')) el.textContent = 'seen ' + ago(now() - Number(el.dataset.seen));
   }
 
   /* ── alerts when an ID becomes unblocked ──────────────── */
@@ -705,14 +745,16 @@
   setInterval(loadTeams, 60000);
   setInterval(poll, POLL_MS);
   setInterval(loadEarnings, 10000);
-  $('period').value = ls.get('bpvm_period') || 'today';
+  const savedPeriod = ls.get('bpvm_period');
+  $('period').value = [...$('period').options].some(o => o.value === savedPeriod) ? savedPeriod : 'today';
   const setCustom = (a, b) => { $('dFrom').value = toInput(a); $('dTo').value = toInput(b); };
   if (!$('dFrom').value) setCustom(dayStart(new Date()), now());
-  $('period').addEventListener('change', () => { ls.set('bpvm_period', $('period').value); loadEarnings(); });
-  $('dFrom').addEventListener('change', loadEarnings);
+  const reloadEarnings = () => { earnRows = []; loadEarnings(); };
+  $('period').addEventListener('change', () => { ls.set('bpvm_period', $('period').value); reloadEarnings(); });
+  $('dFrom').addEventListener('change', reloadEarnings);
   $('detToggle').addEventListener('click', () => { detailsOpen = !detailsOpen; ls.set('bpvm_details', detailsOpen ? '1' : '0'); renderEarnings(); });
-  $('dTo').addEventListener('change', loadEarnings);
-  setInterval(() => { if (team && tokenFor(team)) { render(); checkTransitions(); } }, 1000);
+  $('dTo').addEventListener('change', reloadEarnings);
+  setInterval(tick, 1000);
 })();
 </script>
 </body>
