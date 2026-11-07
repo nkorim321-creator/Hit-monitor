@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BP Vote Monitor</title>
+<style>
+  :root {
+    --bg: #070b14; --panel: #0d1424; --panel2: #111a2e; --line: #1d2a44;
+    --text: #e2e8f0; --muted: #7c8aa5; --green: #22c55e; --red: #ef4444;
+    --amber: #f59e0b; --gray: #64748b; --blue: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; background: rgba(7,11,20,.92); backdrop-filter: blur(8px);
+           border-bottom: 1px solid var(--line); padding: 12px 16px; }
+  .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 18px; margin: 0; letter-spacing: .3px; }
+  h1 small { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+  .spacer { flex: 1; }
+  .conn { font-size: 12px; color: var(--muted); }
+  .conn.err { color: var(--red); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 12px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+  .stat.active { outline: 2px solid var(--blue); }
+  .stat .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+  .tools { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  input, select, button { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+                          border-radius: 8px; padding: 7px 10px; font: inherit; }
+  input { flex: 1; min-width: 160px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--blue); }
+  main { padding: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--gray);
+          border-radius: 12px; padding: 12px 14px; }
+  .card.RUNNING { border-left-color: var(--green); }
+  .card.BLOCKED { border-left-color: var(--red); }
+  .card.READY   { border-left-color: var(--blue); }
+  .card.OFFLINE, .card.LOGGED_OUT, .card.UNKNOWN { border-left-color: var(--gray); opacity: .85; }
+  .row1 { display: flex; align-items: flex-start; gap: 8px; }
+  .name { font-weight: 600; font-size: 15px; cursor: pointer; word-break: break-all; }
+  .name:hover { text-decoration: underline dotted; }
+  .email { color: var(--muted); font-size: 12px; word-break: break-all; }
+  .pill { margin-left: auto; white-space: nowrap; font-size: 11px; font-weight: 700; padding: 3px 9px;
+          border-radius: 999px; letter-spacing: .5px; }
+  .pill.RUNNING { background: rgba(34,197,94,.15); color: var(--green); }
+  .pill.BLOCKED { background: rgba(239,68,68,.15); color: var(--red); }
+  .pill.READY   { background: rgba(56,189,248,.15); color: var(--blue); }
+  .pill.OFFLINE, .pill.LOGGED_OUT, .pill.UNKNOWN { background: rgba(100,116,139,.2); color: #94a3b8; }
+  .big { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 0 6px; }
+  .timer { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .timer.red { color: var(--red); } .timer.green { color: var(--green); } .timer.gray { color: var(--muted); font-size: 16px; }
+  .bal { text-align: right; }
+  .bal b { font-size: 18px; }
+  .bal div { font-size: 11px; color: var(--muted); }
+  .cats { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 12px; margin-top: 6px; }
+  .cats span { display: flex; justify-content: space-between; color: var(--muted); }
+  .cats span.has b { color: var(--green); }
+  .foot { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; color: var(--muted); }
+  .foot a { color: var(--muted); cursor: pointer; }
+  .foot a:hover { color: var(--red); }
+  .empty { text-align: center; color: var(--muted); padding: 60px 16px; }
+  .empty code { background: var(--panel2); padding: 2px 6px; border-radius: 4px; }
+  @media (max-width: 480px) { header { position: static; } main { padding: 10px; } .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <h1>🗳 BP Vote Monitor <small>all accounts, one page</small></h1>
+    <div class="spacer"></div>
+    <span class="conn" id="conn">connecting…</span>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div class="tools">
+    <input id="q" placeholder="Search name / email / id…">
+    <select id="sort">
+      <option value="status">Sort: status</option>
+      <option value="unlock">Sort: unlock soonest</option>
+      <option value="balance">Sort: balance</option>
+      <option value="name">Sort: name</option>
+      <option value="seen">Sort: last seen</option>
+    </select>
+    <button id="notifyBtn" title="Alert me when an account gets unblocked">🔔 Alerts: off</button>
+  </div>
+</header>
+<main>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" hidden>
+    No accounts yet.<br><br>
+    Install <code>BP_Vote_Monitor.user.js</code> in Tampermonkey on each account's browser
+    and open <code>bpworker.com/vote</code> once.
+  </div>
+</main>
+
+<script>
+(() => {
+  const OFFLINE_AFTER_MS = 3 * 60 * 1000;   // no report for 3 min → OFFLINE
+  const POLL_MS = 5000;
+
+  // Optional secret: open the page as  /?key=YOURKEY  once; it is remembered.
+  const qs = new URLSearchParams(location.search);
+  const ls = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+               set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  if (qs.get('key')) ls.set('bpvm_key', qs.get('key'));
+  const KEY = ls.get('bpvm_key') || '';
+
+  let accounts = [], serverSkew = 0, filter = ls.get('bpvm_filter') || 'ALL';
+  let notifyOn = ls.get('bpvm_notify') === '1';
+  const prevStatus = {};
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const money = c => c == null ? '—' : '$' + (c / 100).toFixed(2);
+  const now = () => Date.now() + serverSkew;
+
+  function hms(ms) {
+    if (ms < 0) ms = 0;
+    const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return `${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`;
+  }
+  function ago(ms) {
+    const s = Math.max(0, Math.round(ms / 1000));
+    if (s < 60) return s + 's ago';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+    return Math.floor(s / 86400) + 'd ago';
+  }
+
+  // Effective status shown on the dashboard
+  function statusOf(a) {
+    if (now() - a.lastSeen > OFFLINE_AFTER_MS) return 'OFFLINE';
+    if (a.state === 'BLOCKED') return (a.unlockAt && a.unlockAt <= now()) ? 'READY' : 'BLOCKED';
+    return a.state || 'UNKNOWN';
+  }
+  const LABEL = { RUNNING: 'RUNNING', BLOCKED: 'BLOCKED', READY: 'UNLOCKED', OFFLINE: 'OFFLINE', LOGGED_OUT: 'LOGGED OUT', UNKNOWN: 'UNKNOWN' };
+  const ORDER = { READY: 0, RUNNING: 1, BLOCKED: 2, LOGGED_OUT: 3, UNKNOWN: 4, OFFLINE: 5 };
+  const displayName = a => a.alias || a.nickname || a.email || a.id;
+
+  function renderStats() {
+    const c = { ALL: accounts.length, RUNNING: 0, BLOCKED: 0, OFFLINE: 0 };
+    let bal = 0, votes = 0;
+    for (const a of accounts) {
+      const s = statusOf(a);
+      if (s === 'RUNNING' || s === 'READY') c.RUNNING++;
+      else if (s === 'BLOCKED') c.BLOCKED++;
+      else c.OFFLINE++;
+      bal += a.totalBalanceCents || 0;
+      if (s === 'RUNNING') votes += a.totalAvailable || 0;
+    }
+    const items = [
+      ['ALL', c.ALL, 'Accounts', ''],
+      ['RUNNING', c.RUNNING, 'Running / Unlocked', 'color:var(--green)'],
+      ['BLOCKED', c.BLOCKED, 'Blocked', 'color:var(--red)'],
+      ['OFFLINE', c.OFFLINE, 'Offline / Logged out', 'color:#94a3b8'],
+      [null, money(bal), 'Total balance', ''],
+      [null, votes, 'Votes available', 'color:var(--blue)'],
+    ];
+    $('stats').innerHTML = items.map(([f, n, l, st]) =>
+      `<div class="stat ${f && f === filter ? 'active' : ''}" ${f ? `data-f="${f}"` : ''}>
+         <div class="n" style="${st}">${esc(n)}</div><div class="l">${l}</div></div>`).join('');
+  }
+
+  function render() {
+    renderStats();
+    const q = $('q').value.trim().toLowerCase();
+    const sort = $('sort').value;
+    let list = accounts.filter(a => {
+      const s = statusOf(a);
+      if (filter === 'RUNNING' && !(s === 'RUNNING' || s === 'READY')) return false;
+      if (filter === 'BLOCKED' && s !== 'BLOCKED') return false;
+      if (filter === 'OFFLINE' && !['OFFLINE','LOGGED_OUT','UNKNOWN'].includes(s)) return false;
+      if (q && !`${displayName(a)} ${a.email} ${a.id} ${a.nickname}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    const unl = a => statusOf(a) === 'BLOCKED' ? a.unlockAt : 0;
+    list.sort((a, b) => {
+      if (sort === 'balance') return (b.totalBalanceCents || 0) - (a.totalBalanceCents || 0);
+      if (sort === 'name') return displayName(a).localeCompare(displayName(b));
+      if (sort === 'seen') return b.lastSeen - a.lastSeen;
+      if (sort === 'unlock') return unl(a) - unl(b) || displayName(a).localeCompare(displayName(b));
+      return ORDER[statusOf(a)] - ORDER[statusOf(b)] || unl(a) - unl(b) || displayName(a).localeCompare(displayName(b));
+    });
+
+    $('empty').hidden = accounts.length > 0;
+    $('grid').innerHTML = list.map(a => {
+      const s = statusOf(a);
+      let timer;
+      if (s === 'BLOCKED') timer = `<div class="timer red">${hms(a.unlockAt - now())}</div>`;
+      else if (s === 'READY') timer = `<div class="timer green">Unlocked ✓</div>`;
+      else if (s === 'RUNNING') timer = `<div class="timer green">${a.totalAvailable || 0} <span style="font-size:13px;color:var(--muted)">votes avail.</span></div>`;
+      else if (s === 'OFFLINE') timer = `<div class="timer gray">No report ${ago(now() - a.lastSeen)}</div>`;
+      else timer = `<div class="timer gray">${LABEL[s]}</div>`;
+
+      const cats = (a.categories || []).map(c =>
+        `<span class="${c.count > 0 ? 'has' : ''}">${esc(c.name)} <b>${c.count}</b></span>`).join('');
+      const sub = s === 'BLOCKED' && a.unlockAt
+        ? `Unlocks at ${new Date(a.unlockAt - serverSkew).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+        : (a.rateLimitText ? `Limit ${esc(a.rateLimitText)}` : '');
+
+      return `<div class="card ${s}">
+        <div class="row1">
+          <div><div class="name" data-alias="${esc(a.id)}" title="Click to rename">${esc(displayName(a))}</div>
+               <div class="email">${esc(a.email && a.email !== displayName(a) ? a.email : a.id)}</div></div>
+          <span class="pill ${s}">${LABEL[s]}</span>
+        </div>
+        <div class="big">${timer}
+          <div class="bal"><b>${money(a.totalBalanceCents)}</b><div>balance</div></div></div>
+        ${cats && s !== 'BLOCKED' ? `<div class="cats">${cats}</div>` : ''}
+        <div class="foot"><span>${sub || '&nbsp;'}</span>
+          <span>seen ${ago(now() - a.lastSeen)} · <a data-del="${esc(a.id)}" title="Remove from dashboard">✕</a></span></div>
+      </div>`;
+    }).join('');
+  }
+
+  // Alerts when an account becomes unblocked
+  let audioCtx = null;
+  function beep() {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.connect(g); g.connect(audioCtx.destination); o.frequency.value = 880; g.gain.value = .15;
+      o.start(); o.stop(audioCtx.currentTime + .25);
+    } catch (e) {}
+  }
+  function checkTransitions() {
+    for (const a of accounts) {
+      const s = statusOf(a), p = prevStatus[a.id];
+      if (notifyOn && p === 'BLOCKED' && (s === 'READY' || s === 'RUNNING')) {
+        beep();
+        try { if (Notification.permission === 'granted') new Notification('Account unlocked', { body: displayName(a) }); } catch (e) {}
+      }
+      prevStatus[a.id] = s;
+    }
+  }
+
+  async function api(path, opts = {}) {
+    const r = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', 'X-Key': KEY, ...(opts.headers || {}) } });
+    if (!r.ok) throw new Error(r.status === 401 ? 'wrong key — open /?key=YOURKEY' : 'HTTP ' + r.status);
+    return r.json();
+  }
+
+  async function poll() {
+    try {
+      const d = await api('/api/accounts');
+      serverSkew = d.now - Date.now();
+      accounts = d.accounts;
+      $('conn').textContent = 'updated ' + new Date().toLocaleTimeString();
+      $('conn').className = 'conn';
+    } catch (e) {
+      $('conn').textContent = '⚠ ' + e.message;
+      $('conn').className = 'conn err';
+    }
+    render();
+  }
+
+  $('stats').addEventListener('click', e => {
+    const el = e.target.closest('[data-f]'); if (!el) return;
+    filter = el.dataset.f === filter ? 'ALL' : el.dataset.f;
+    ls.set('bpvm_filter', filter); render();
+  });
+  $('grid').addEventListener('click', async e => {
+    const del = e.target.closest('[data-del]');
+    if (del) {
+      if (!confirm('Remove this account from the dashboard? (It will come back if the script reports again.)')) return;
+      await api('/api/accounts/' + encodeURIComponent(del.dataset.del), { method: 'DELETE' }).catch(() => {});
+      return poll();
+    }
+    const nm = e.target.closest('[data-alias]');
+    if (nm) {
+      const a = accounts.find(x => x.id === nm.dataset.alias);
+      const v = prompt('Dashboard name for this account (blank = use script nickname / email):', a?.alias || '');
+      if (v === null) return;
+      await api('/api/accounts/' + encodeURIComponent(nm.dataset.alias), { method: 'PATCH', body: JSON.stringify({ alias: v.trim() }) }).catch(() => {});
+      poll();
+    }
+  });
+  $('q').addEventListener('input', render);
+  $('sort').value = ls.get('bpvm_sort') || 'status';
+  $('sort').addEventListener('change', () => { ls.set('bpvm_sort', $('sort').value); render(); });
+
+  function paintNotify() { $('notifyBtn').textContent = notifyOn ? '🔔 Alerts: on' : '🔕 Alerts: off'; }
+  $('notifyBtn').addEventListener('click', async () => {
+    notifyOn = !notifyOn; ls.set('bpvm_notify', notifyOn ? '1' : '0'); paintNotify();
+    if (notifyOn) { beep(); try { if (Notification.permission === 'default') await Notification.requestPermission(); } catch (e) {} }
+  });
+  paintNotify();
+
+  poll();
+  setInterval(poll, POLL_MS);
+  setInterval(() => { render(); checkTransitions(); }, 1000);
+})();
+</script>
+</body>
+</html>
