@@ -30,8 +30,13 @@ if not defined NODE (
 echo  Node found: %NODE%
 
 echo.
+:askpw
 set "SECRET="
-set /p "SECRET=Dashboard password (letters/numbers only, blank = no password): "
+set /p "SECRET=Dashboard password dao (shudhu letter/number, jemon bp2026): "
+if not defined SECRET (
+  echo  Password khali rakha jabe na.
+  goto askpw
+)
 
 (
   echo @echo off
@@ -55,10 +60,10 @@ timeout /t 3 >nul
 echo.
 echo  ======================================================
 echo   Done! Open the dashboard:  http://localhost:3100
-if defined SECRET echo   From other PCs:            http://SERVER-IP:3100/?key=%SECRET%
-if not defined SECRET echo   From other PCs:            http://SERVER-IP:3100
+echo   From other PCs:            http://50.117.3.240:3100
+echo   Password:                  %SECRET%
 echo   Log file: %~dp0server.log
 echo  ======================================================
 echo.
-start "" "http://localhost:3100/?key=%SECRET%"
+start "" "http://localhost:3100"
 pause

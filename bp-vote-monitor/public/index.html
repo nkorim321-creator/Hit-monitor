@@ -63,6 +63,16 @@
   .foot a:hover { color: var(--red); }
   .empty { text-align: center; color: var(--muted); padding: 60px 16px; }
   .empty code { background: var(--panel2); padding: 2px 6px; border-radius: 4px; }
+  #login { position: fixed; inset: 0; z-index: 50; background: rgba(4,7,14,.97); display: flex;
+           align-items: center; justify-content: center; padding: 16px; }
+  #login[hidden] { display: none; }
+  #login form { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 28px 24px;
+                width: 100%; max-width: 340px; text-align: center; }
+  #login h2 { margin: 0 0 6px; font-size: 20px; }
+  #login p { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+  #login input { width: 100%; margin-bottom: 10px; font-size: 16px; padding: 10px 12px; }
+  #login button { width: 100%; padding: 10px; font-weight: 600; background: #1d4ed8; border-color: #1d4ed8; }
+  #loginErr { color: var(--red); font-size: 13px; min-height: 18px; margin-top: 8px; }
   @media (max-width: 480px) { header { position: static; } main { padding: 10px; } .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -83,6 +93,7 @@
       <option value="name">Sort: name</option>
       <option value="seen">Sort: last seen</option>
     </select>
+    <button id="logoutBtn" title="Logout from this browser">🔒 Logout</button>
     <button id="notifyBtn" title="Alert me when an account gets unblocked">🔔 Alerts: off</button>
   </div>
 </header>
@@ -94,18 +105,29 @@
     and open <code>bpworker.com/vote</code> once.
   </div>
 </main>
+<div id="login" hidden>
+  <form id="loginForm" autocomplete="on">
+    <h2>🔒 BP Vote Monitor</h2>
+    <p>Dashboard dekhte password dao</p>
+    <input type="text" name="username" value="bp-vote-monitor" autocomplete="username" hidden>
+    <input id="pw" type="password" placeholder="Password" autocomplete="current-password" required>
+    <button type="submit">Login</button>
+    <div id="loginErr"></div>
+  </form>
+</div>
 
 <script>
 (() => {
   const OFFLINE_AFTER_MS = 3 * 60 * 1000;   // no report for 3 min → OFFLINE
   const POLL_MS = 5000;
 
-  // Optional secret: open the page as  /?key=YOURKEY  once; it is remembered.
+  // Password: asked by the login box (or /?key=YOURKEY once); remembered in this browser.
   const qs = new URLSearchParams(location.search);
   const ls = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
                set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
-  if (qs.get('key')) ls.set('bpvm_key', qs.get('key'));
-  const KEY = ls.get('bpvm_key') || '';
+  if (qs.get('key')) { ls.set('bpvm_key', qs.get('key')); history.replaceState(null, '', location.pathname); }
+  let KEY = ls.get('bpvm_key') || '';
+  let triedLogin = false;
 
   let accounts = [], serverSkew = 0, filter = ls.get('bpvm_filter') || 'ALL';
   let notifyOn = ls.get('bpvm_notify') === '1';
@@ -238,7 +260,8 @@
 
   async function api(path, opts = {}) {
     const r = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', 'X-Key': KEY, ...(opts.headers || {}) } });
-    if (!r.ok) throw new Error(r.status === 401 ? 'wrong key — open /?key=YOURKEY' : 'HTTP ' + r.status);
+    if (r.status === 401) { const e = new Error('password needed'); e.auth = true; throw e; }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
   }
 
@@ -249,12 +272,27 @@
       accounts = d.accounts;
       $('conn').textContent = 'updated ' + new Date().toLocaleTimeString();
       $('conn').className = 'conn';
+      $('login').hidden = true;
     } catch (e) {
+      if (e.auth) {
+        accounts = [];
+        $('loginErr').textContent = triedLogin ? 'Password bhul hoyeche, abar try koro' : '';
+        if ($('login').hidden) { $('login').hidden = false; $('pw').value = ''; $('pw').focus(); }
+      }
       $('conn').textContent = '⚠ ' + e.message;
       $('conn').className = 'conn err';
     }
     render();
   }
+
+  $('loginForm').addEventListener('submit', e => {
+    e.preventDefault();
+    KEY = $('pw').value.trim(); ls.set('bpvm_key', KEY); triedLogin = true;
+    $('login').hidden = true; poll();
+  });
+  $('logoutBtn').addEventListener('click', () => {
+    ls.set('bpvm_key', ''); KEY = ''; triedLogin = false; accounts = []; poll();
+  });
 
   $('stats').addEventListener('click', e => {
     const el = e.target.closest('[data-f]'); if (!el) return;

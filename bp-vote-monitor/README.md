@@ -25,7 +25,7 @@ Server kono account e login kore na, tai proti account nijer browser/IP thekei c
 
 1. Server e RDP diye dhuko. Edge diye https://nodejs.org theke **LTS** download kore install koro (shob option default rekhe Next, Next).
 2. GitHub theke ei branch er **ZIP** download koro, extract koro, `bp-vote-monitor` folder ta `C:\bp-vote-monitor` e rakho.
-3. `C:\bp-vote-monitor\install-windows.bat` e **right-click → Run as administrator**. Password chaile dao (shudhu letter/number).
+3. `C:\bp-vote-monitor\install-windows.bat` e **right-click → Run as administrator**. Dashboard er password dao (shudhu letter/number).
    Eta port 3100 open kore, server chalu kore, ar reboot er por nije nije chalu hoy.
 4. VPS company r panel e (Contabo/Vultr/AWS ityadi) firewall thakle sheikhane o **TCP 3100** open koro.
 5. Server bondho/remove korte: `uninstall-windows.bat` (Run as administrator).
@@ -55,13 +55,13 @@ Firewall e port **3100** open rakhte hobe.
 
 1. Tampermonkey e `BP_Vote_Monitor.user.js` install koro.
 2. Server URL default `http://50.117.3.240:3100`. Onno hole Tampermonkey menu → **⚙ Set server URL**.
-3. SECRET dile menu → **🔑 Set secret key**.
 4. Optional: menu → **✏ Set nickname for this account** (dashboard e ei naam dekhabe).
 5. `https://www.bpworker.com/vote` ekta tab e khola rakho. Niche dan kone choto badge e status dekhabe.
 
 ### 3. Dashboard
 
-Browser e `http://50.117.3.240:3100` kholo (SECRET thakle `http://50.117.3.240:3100/?key=mypassword` ekbar).
+Browser e `http://50.117.3.240:3100` kholo. Prothom bar password chaibe, ekbar dile oi browser e ar chaibe na (🔒 Logout dile abar chaibe).
+Password shudhu dashboard er jonno, ID er script e kono password lage na.
 
 - Upore box e click korle filter hoy (Running / Blocked / Offline)
 - Naam e click korle rename kora jay

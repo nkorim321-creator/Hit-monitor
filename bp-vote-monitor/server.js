@@ -87,7 +87,9 @@ http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, '');
 
   if (p.startsWith('/api/')) {
-    if (SECRET && (req.headers['x-key'] || url.searchParams.get('key')) !== SECRET) {
+    // Password protects only the dashboard. Account scripts can report without it.
+    const isReport = p === '/api/report' && req.method === 'POST';
+    if (SECRET && !isReport && (req.headers['x-key'] || url.searchParams.get('key')) !== SECRET) {
       return send(res, 401, { error: 'bad key' });
     }
     try {
