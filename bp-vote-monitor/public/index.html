@@ -9,7 +9,7 @@
   :root {
     --bg: #070b14; --panel: #0d1424; --panel2: #111a2e; --line: #1d2a44;
     --text: #e2e8f0; --muted: #7c8aa5; --green: #22c55e; --red: #ef4444;
-    --amber: #f59e0b; --gray: #64748b; --blue: #38bdf8; --accent: #1d4ed8;
+    --amber: #f59e0b; --orange: #f97316; --gray: #64748b; --blue: #38bdf8; --accent: #1d4ed8;
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
@@ -47,6 +47,7 @@
           border: 1px solid var(--line); background: var(--panel2); cursor: pointer; font-variant-numeric: tabular-nums; }
   .chip.RUNNING, .chip.READY { border-color: rgba(34,197,94,.6); color: var(--green); }
   .chip.BLOCKED { border-color: rgba(239,68,68,.6); color: var(--red); }
+  .chip.PAUSED { border-color: rgba(249,115,22,.6); color: var(--orange); }
   .chip.OFFLINE, .chip.LOGGED_OUT, .chip.UNKNOWN, .chip.NODATA { color: #94a3b8; }
   .chip.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
 
@@ -60,6 +61,7 @@
   .card.RUNNING { border-left-color: var(--green); }
   .card.BLOCKED { border-left-color: var(--red); }
   .card.READY   { border-left-color: var(--blue); }
+  .card.PAUSED  { border-left-color: var(--orange); }
   .card.OFFLINE, .card.LOGGED_OUT, .card.UNKNOWN, .card.NODATA { opacity: .85; }
   .row1 { display: flex; align-items: flex-start; gap: 8px; }
   .idline { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
@@ -73,10 +75,12 @@
   .pill.RUNNING { background: rgba(34,197,94,.15); color: var(--green); }
   .pill.BLOCKED { background: rgba(239,68,68,.15); color: var(--red); }
   .pill.READY   { background: rgba(56,189,248,.15); color: var(--blue); }
+  .pill.PAUSED  { background: rgba(249,115,22,.15); color: var(--orange); }
   .pill.OFFLINE, .pill.LOGGED_OUT, .pill.UNKNOWN, .pill.NODATA { background: rgba(100,116,139,.2); color: #94a3b8; }
   .big { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 0 6px; }
   .timer { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .timer.red { color: var(--red); } .timer.green { color: var(--green); } .timer.gray { color: var(--muted); font-size: 15px; }
+  .timer.red { color: var(--red); } .timer.orange { color: var(--orange); font-size: 22px; }
+  .notice { font-size: 12px; color: var(--muted); margin-top: 4px; } .timer.green { color: var(--green); } .timer.gray { color: var(--muted); font-size: 15px; }
   .bal { text-align: right; }
   .bal b { font-size: 18px; }
   .bal div { font-size: 11px; color: var(--muted); }
@@ -275,9 +279,10 @@
     if (a.state === 'BLOCKED') return (a.unlockAt && a.unlockAt <= now()) ? 'READY' : 'BLOCKED';
     return a.state || 'UNKNOWN';
   }
-  const LABEL = { RUNNING: 'RUNNING', BLOCKED: 'BLOCKED', READY: 'UNLOCKED', OFFLINE: 'OFFLINE',
+  const LABEL = { RUNNING: 'RUNNING', BLOCKED: 'BLOCKED', PAUSED: 'PAUSED', READY: 'UNLOCKED', OFFLINE: 'OFFLINE',
                   LOGGED_OUT: 'LOGGED OUT', UNKNOWN: 'UNKNOWN', NODATA: 'NO DATA' };
-  const ORDER = { READY: 0, RUNNING: 1, BLOCKED: 2, LOGGED_OUT: 3, UNKNOWN: 4, OFFLINE: 5, NODATA: 6 };
+  const ORDER = { READY: 0, RUNNING: 1, BLOCKED: 2, PAUSED: 3, LOGGED_OUT: 4, UNKNOWN: 5, OFFLINE: 6, NODATA: 7 };
+  const isStop = s => s === 'BLOCKED' || s === 'PAUSED';
   const isRun = s => s === 'RUNNING' || s === 'READY';
   const isOff = s => ['OFFLINE', 'LOGGED_OUT', 'UNKNOWN', 'NODATA'].includes(s);
   const idLabel = a => a.unassigned ? 'Not in sheet' : `ID-${a.serial}`;
@@ -382,14 +387,14 @@
     let bal = 0, votes = 0;
     for (const a of accounts) {
       const s = statusOf(a);
-      if (isRun(s)) c.RUNNING++; else if (s === 'BLOCKED') c.BLOCKED++; else c.OFFLINE++;
+      if (isRun(s)) c.RUNNING++; else if (isStop(s)) c.BLOCKED++; else c.OFFLINE++;
       bal += a.totalBalanceCents || 0;
       if (s === 'RUNNING') votes += a.totalAvailable || 0;
     }
     const items = [
       ['ALL', c.ALL, 'IDs', ''],
       ['RUNNING', c.RUNNING, 'Running / Unlocked', 'color:var(--green)'],
-      ['BLOCKED', c.BLOCKED, 'Blocked', 'color:var(--red)'],
+      ['BLOCKED', c.BLOCKED, 'Blocked / Paused', 'color:var(--red)'],
       ['OFFLINE', c.OFFLINE, 'Offline / No data', 'color:#94a3b8'],
       [null, money(bal), 'Total balance', ''],
       [null, votes, 'Votes available', 'color:var(--blue)'],
@@ -572,15 +577,21 @@
     const s = statusOf(a);
     let timer;
     if (s === 'BLOCKED') timer = a.unlockAt ? `<div class="timer red" data-unlock="${a.unlockAt}">${hms(a.unlockAt - now())}</div>` : `<div class="timer red">Blocked</div>`;
+    else if (s === 'PAUSED') timer = `<div><div class="timer orange">Paused${a.waitText ? ' · ' + esc(a.waitText) : ''}</div>` +
+      (a.noticeText ? `<div class="notice">${esc(a.noticeText)} ${esc(a.waitText || '')}</div>` : '') + `</div>`;
     else if (s === 'READY') timer = `<div class="timer green">Unlocked ✓</div>`;
     else if (s === 'RUNNING') timer = `<div class="timer green">${a.totalAvailable || 0} <span style="font-size:13px;color:var(--muted)">votes avail.</span></div>`;
     else if (s === 'OFFLINE') timer = `<div class="timer gray">No report ${ago(now() - a.lastSeen)}</div>`;
     else if (s === 'NODATA') timer = `<div class="timer gray">Script not reporting yet</div>`;
-    else timer = `<div class="timer gray">${LABEL[s]}</div>`;
+    else timer = `<div><div class="timer gray">${LABEL[s]}</div>${a.noticeText ? `<div class="notice">Site says: ${esc(a.noticeText)} ${esc(a.waitText || '')}</div>` : ''}</div>`;
 
     const cats = (a.categories || []).map(c =>
       `<span class="${c.count > 0 ? 'has' : ''}">${esc(c.name)} <b>${c.count}</b></span>`).join('');
-    const footL = s === 'BLOCKED' && a.unlockAt
+    // Site gives only whole days (e.g. "9 days"), so the end date is approximate
+    const roughWait = a.waitText && !/hour|min|sec|:/i.test(a.waitText);
+    const footL = s === 'PAUSED' && a.waitUntil
+      ? `Back ${roughWait ? '≈ ' : 'at '}${new Date(a.waitUntil - serverSkew).toLocaleString([], roughWait ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+      : s === 'BLOCKED' && a.unlockAt
       ? `Unlocks at ${new Date(a.unlockAt - serverSkew).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
       : (a.rateLimitText ? `Limit ${esc(a.rateLimitText)}` : '');
     const footR = a.reported ? `<span data-seen="${a.lastSeen}">seen ${ago(now() - a.lastSeen)}</span>` : '';
@@ -627,7 +638,7 @@
       if (selected !== null) return a.key === selected;
       const s = statusOf(a);
       if (filter === 'RUNNING' && !isRun(s)) return false;
-      if (filter === 'BLOCKED' && s !== 'BLOCKED') return false;
+      if (filter === 'BLOCKED' && !isStop(s)) return false;
       if (filter === 'OFFLINE' && !isOff(s)) return false;
       if (q && !`${a.mail} ${a.workerId} ${a.team} id-${a.serial} ${a.bpYear}`.toLowerCase().includes(q)) return false;
       return true;

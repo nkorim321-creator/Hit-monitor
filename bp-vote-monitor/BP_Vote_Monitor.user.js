@@ -2,7 +2,7 @@
 // @name        BP Worker Vote Monitor (Multi-Account Reporter)
 // Works in Tampermonkey and Violentmonkey.
 // @namespace   https://www.bpworker.com/
-// @version     1.6
+// @version     1.7
 // @description Reads the bpworker.com /vote page (Running / Blocked, unlock time, balance, available votes) and reports it to your Vote Monitor server so all accounts show on one dashboard.
 // @match       https://www.bpworker.com/*
 // @match       https://bpworker.com/*
@@ -79,6 +79,7 @@
       workerKey: null, email: null, state: 'UNKNOWN',
       balanceCents: null, totalBalanceCents: null, rateLimitSeconds: null,
       rateLimitText: null, categories: [], totalAvailable: 0, payoutUnlockSeconds: null,
+      noticeText: null, waitText: null, waitSeconds: null,
     };
 
     const keyM = html.match(/window\.bp_push_worker\s*=\s*"([^"]+)"/);
@@ -114,8 +115,28 @@
     const rl = doc.querySelector('.rate-info b');
     if (rl) out.rateLimitText = rl.textContent.trim();
 
-    out.state = (out.rateLimitSeconds && out.rateLimitSeconds > 0) ? 'BLOCKED' : 'RUNNING';
+    // Notice shown instead of the categories, e.g. "Voting is paused on your account. Check back in:" + "9 days"
+    const notice = doc.querySelector('.notice');
+    if (notice) out.noticeText = notice.textContent.replace(/\s+/g, ' ').trim().slice(0, 200);
+    const nt = doc.querySelector('.notice-timer');
+    const ntText = nt ? nt.textContent.replace(/\s+/g, ' ').trim() : '';   // empty for the live rate-limit countdown
+    if (ntText) { out.waitText = ntText.slice(0, 60); out.waitSeconds = parseWait(ntText); }
+
+    if (out.rateLimitSeconds && out.rateLimitSeconds > 0) out.state = 'BLOCKED';
+    else if (out.noticeText && /paused|suspend|disabled|banned/i.test(out.noticeText)) out.state = 'PAUSED';
+    else if (out.categories.length) out.state = 'RUNNING';
+    else out.state = 'UNKNOWN';          // no vote categories on the page: do not guess "running"
     return out;
+  }
+
+  // "9 days", "1 day 4 hours", "5 hours", "2:03:04" → seconds (null if not understood)
+  function parseWait(t) {
+    const c = t.match(/^(\d+):(\d{2})(?::(\d{2}))?$/);
+    if (c) return c[3] !== undefined ? (+c[1]) * 3600 + (+c[2]) * 60 + (+c[3]) : (+c[1]) * 60 + (+c[2]);
+    const U = { week: 604800, day: 86400, hour: 3600, hr: 3600, minute: 60, min: 60, second: 1, sec: 1 };
+    let sum = 0, found = false;
+    for (const m of t.matchAll(/(\d+)\s*(week|day|hour|hr|minute|min|second|sec)s?/gi)) { sum += (+m[1]) * U[m[2].toLowerCase()]; found = true; }
+    return found ? sum : null;
   }
 
   /* ── NETWORK ─────────────────────────────────────────── */
@@ -225,6 +246,9 @@
         totalBalanceCents: s.totalBalanceCents,
         rateLimitSeconds: s.rateLimitSeconds,
         rateLimitText: s.rateLimitText,
+        noticeText: s.noticeText,
+        waitText: s.waitText,
+        waitSeconds: s.waitSeconds,
         categories: s.categories,
         totalAvailable: s.totalAvailable,
         payoutUnlockSeconds: s.payoutUnlockSeconds,
@@ -236,8 +260,8 @@
         nextMs = Math.min(nextMs, s.rateLimitSeconds * 1000 + 5000);
       }
 
-      const icon  = { RUNNING: '🟢', BLOCKED: '🔴', LOGGED_OUT: '⚪' }[s.state] || '🟡';
-      const color = { RUNNING: '#22c55e', BLOCKED: '#ef4444' }[s.state] || '#fbbf24';
+      const icon  = { RUNNING: '🟢', BLOCKED: '🔴', PAUSED: '🟠', LOGGED_OUT: '⚪' }[s.state] || '🟡';
+      const color = { RUNNING: '#22c55e', BLOCKED: '#ef4444', PAUSED: '#f97316' }[s.state] || '#fbbf24';
       if (sent.ok) {
         setBadge(color, `${icon} ${s.state}  ·  synced ${new Date().toLocaleTimeString()}`);
       } else {

@@ -249,7 +249,7 @@ refreshSheet();
 setInterval(refreshSheet, SHEET_REFRESH_MS);
 
 /* ── build the list a viewer may see ─────────────────────── */
-const PUBLIC_FIELDS = ['state', 'balanceCents', 'totalBalanceCents', 'rateLimitText', 'unlockAt',
+const PUBLIC_FIELDS = ['state', 'balanceCents', 'totalBalanceCents', 'rateLimitText', 'unlockAt', 'noticeText', 'waitText', 'waitUntil',
                        'categories', 'totalAvailable', 'lastSeen', 'stateSince'];
 function view(scope, team) {
   const byMail = new Map();
@@ -285,14 +285,18 @@ function view(scope, team) {
 /* ── reports from the account scripts ────────────────────── */
 const str = (v, max = 200) => (v == null ? '' : String(v).slice(0, max));
 const num = v => (v === null || v === undefined || v === '' || isNaN(Number(v)) ? null : Number(v));
-const STATES = ['RUNNING', 'BLOCKED', 'LOGGED_OUT', 'UNKNOWN'];
+const STATES = ['RUNNING', 'BLOCKED', 'PAUSED', 'LOGGED_OUT', 'UNKNOWN'];
 
 function handleReport(b) {
   const id = str(b.id, 120).trim();
   if (!id) throw new Error('missing id');
   const now  = Date.now();
   const prev = accounts[id] || { id, firstSeen: now };
-  const state = STATES.includes(b.state) ? b.state : 'UNKNOWN';
+  let state = STATES.includes(b.state) ? b.state : 'UNKNOWN';
+  const cats = Array.isArray(b.categories) ? b.categories : [];
+  // Older scripts called any page without a rate limit "RUNNING", even a "Voting is paused" page.
+  // A real running page always lists vote categories, so without them it is not trusted as running.
+  if (state === 'RUNNING' && cats.length === 0) state = 'UNKNOWN';
   const rateLimitSeconds = num(b.rateLimitSeconds);
   const acc = {
     ...prev,
@@ -304,6 +308,9 @@ function handleReport(b) {
     totalBalanceCents: num(b.totalBalanceCents),
     rateLimitSeconds,
     rateLimitText: str(b.rateLimitText, 60),
+    noticeText: str(b.noticeText, 200),
+    waitText: str(b.waitText, 60),
+    waitUntil: state === 'PAUSED' && num(b.waitSeconds) ? now + num(b.waitSeconds) * 1000 : null,
     unlockAt: state === 'BLOCKED' && rateLimitSeconds ? now + rateLimitSeconds * 1000 : null,
     categories: Array.isArray(b.categories)
       ? b.categories.slice(0, 20).map(c => ({ name: str(c.name, 60), count: num(c.count) || 0, enabled: !!c.enabled }))
