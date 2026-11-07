@@ -12,6 +12,7 @@
     --amber: #f59e0b; --gray: #64748b; --blue: #38bdf8; --accent: #1d4ed8;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
   header { position: sticky; top: 0; z-index: 5; background: rgba(7,11,20,.94); backdrop-filter: blur(8px);
            border-bottom: 1px solid var(--line); padding: 12px 16px; }
@@ -119,8 +120,8 @@
   .earn-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .earn-top .et { font-weight: 700; font-size: 15px; }
   .earn-top input[type=datetime-local] { padding: 5px 8px; color-scheme: dark; }
-  .quick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-  .quick button { padding: 3px 9px; font-size: 12px; }
+  #customRange { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  #customRange label { font-size: 12px; color: var(--muted); }
   .etotal { text-align: right; }
   .etotal b { font-size: 22px; color: var(--green); font-variant-numeric: tabular-nums; }
   .etotal div { font-size: 11px; color: var(--muted); }
@@ -184,14 +185,9 @@
         <option value="30d">Last 30 days</option>
         <option value="custom">Custom date &amp; time…</option>
       </select>
-      <span id="customRange" hidden><input type="datetime-local" id="dFrom"> → <input type="datetime-local" id="dTo"></span>
+      <span id="customRange" hidden><label for="dFrom">From</label><input type="datetime-local" id="dFrom"><label for="dTo">To</label><input type="datetime-local" id="dTo"></span>
       <div class="spacer"></div>
       <div class="etotal"><b id="earnTotal">—</b><div id="earnSub"></div></div>
-    </div>
-    <div class="quick" id="quick" hidden>
-      <button data-q="today-2-5">Today 2 AM → 5 AM</button>
-      <button data-q="last-night">Last night 12 AM → 6 AM</button>
-      <button data-q="now-start">To = now</button>
     </div>
     <div class="days" id="earnDays"></div>
     <button class="dtoggle" id="detToggle">▸ Show A–Z details per ID</button>
@@ -466,7 +462,6 @@
   function renderEarnings() {
     const custom = $('period').value === 'custom';
     $('customRange').hidden = !custom;
-    $('quick').hidden = !custom;
     if (earnErr || !earnRange) {
       $('earnTotal').textContent = '—'; $('earnSub').textContent = earnErr; $('earnDays').innerHTML = '';
       $('earnDetails').innerHTML = ''; return;
@@ -715,14 +710,6 @@
   if (!$('dFrom').value) setCustom(dayStart(new Date()), now());
   $('period').addEventListener('change', () => { ls.set('bpvm_period', $('period').value); loadEarnings(); });
   $('dFrom').addEventListener('change', loadEarnings);
-  $('quick').addEventListener('click', e => {
-    const q = e.target.closest('[data-q]'); if (!q) return;
-    const t0 = dayStart(new Date());
-    if (q.dataset.q === 'today-2-5') setCustom(t0 + 2 * HOUR, t0 + 5 * HOUR);
-    if (q.dataset.q === 'last-night') setCustom(t0, t0 + 6 * HOUR);
-    if (q.dataset.q === 'now-start') setCustom(new Date($('dFrom').value).getTime() || t0, now());
-    loadEarnings();
-  });
   $('detToggle').addEventListener('click', () => { detailsOpen = !detailsOpen; ls.set('bpvm_details', detailsOpen ? '1' : '0'); renderEarnings(); });
   $('dTo').addEventListener('change', loadEarnings);
   setInterval(() => { if (team && tokenFor(team)) { render(); checkTransitions(); } }, 1000);
