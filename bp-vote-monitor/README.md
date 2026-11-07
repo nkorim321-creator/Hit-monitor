@@ -68,8 +68,9 @@ Browser e `http://50.117.3.240:3100` kholo.
 - **▾ IDs** button diye serial number gula lukano / dekhano jay. Serial number (1, 2, 3 ...) e click korle shudhu oi ID dekhay. Number er rong: sobuj = Running, lal = Blocked, dhushor = Offline/No data.
 - Card e: **ID-number, Mail, Worker ID, BP Year** (sheet theke), ar status, unlock countdown, balance.
 - **🔔 Alerts** on korle kono ID unblock hole sound + notification ashbe.
-- **💰 Earnings**: Today / Yesterday / Last 7 days / This month / Last 30 days / Custom date. Team er total, din onujayi bar, ar protiti ID card e oi shomoyer earning.
-  Script er report e balance barle earning dhora hoy. Collect/payout e balance komle earning theke bad jay na. Earning tracking shuru hoy server update er por theke, ager earning jana nai.
+- **💰 Earnings**: Last 1 hour / Last 3 hours / Today / Yesterday / Last 7 days / This month / Last 30 days / **Custom date & time** (jemon aj 2:00 AM → 5:00 AM).
+  **▸ Show A–Z details** e protiti ID er oi shomoyer Earned, Collected, koto shomoy Blocked, kokhon block → unlock, Script koto % online chilo. Team er total, din onujayi bar, ar protiti ID card e oi shomoyer earning.
+  Script er report e balance barle earning dhora hoy, exact shomoy shoho (script protiti 60 second e check kore). Collect/payout e balance komle earning theke bad jay na. Earning tracking shuru hoy server update er por theke, ager earning jana nai.
 
 ### Team password set / change
 

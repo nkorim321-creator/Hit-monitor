@@ -118,19 +118,30 @@
   .earn { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
   .earn-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .earn-top .et { font-weight: 700; font-size: 15px; }
-  .earn-top input[type=date] { padding: 5px 8px; color-scheme: dark; }
+  .earn-top input[type=datetime-local] { padding: 5px 8px; color-scheme: dark; }
+  .quick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .quick button { padding: 3px 9px; font-size: 12px; }
   .etotal { text-align: right; }
   .etotal b { font-size: 22px; color: var(--green); font-variant-numeric: tabular-nums; }
   .etotal div { font-size: 11px; color: var(--muted); }
   .days { display: grid; gap: 4px; margin-top: 10px; }
-  .day { display: grid; grid-template-columns: 90px 1fr 70px; gap: 8px; align-items: center; font-size: 12px; }
+  .day { display: grid; grid-template-columns: 160px 1fr 70px; gap: 8px; align-items: center; font-size: 12px; }
   .day .bar { height: 10px; border-radius: 4px; background: var(--panel2); overflow: hidden; }
   .day .bar i { display: block; height: 100%; background: var(--green); border-radius: 4px; }
   .day .amt { text-align: right; font-variant-numeric: tabular-nums; }
   .enote { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .dtoggle { margin-top: 10px; font-size: 12px; }
+  .dwrap { overflow-x: auto; margin-top: 8px; }
+  table.det { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  table.det th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.det td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.det td.n { text-align: right; white-space: nowrap; }
+  table.det td.m { word-break: break-all; min-width: 160px; }
+  table.det tr.tot td { font-weight: 700; border-bottom: none; }
+  .g { color: var(--green); } .r { color: var(--red); } .mu { color: var(--muted); }
   .earned { font-size: 12px; color: var(--green); margin-top: 2px; font-variant-numeric: tabular-nums; }
   .earned.zero { color: var(--muted); }
-  @media (max-width: 480px) { .etotal { text-align: left; width: 100%; } .day { grid-template-columns: 70px 1fr 60px; } }
+  @media (max-width: 480px) { .etotal { text-align: left; width: 100%; } .day { grid-template-columns: 120px 1fr 56px; font-size: 11px; } }
   @media (max-width: 480px) { header { position: static; } main { padding: 10px; } .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -164,19 +175,29 @@
     <div class="earn-top">
       <span class="et">💰 Earnings</span>
       <select id="period">
+        <option value="1h">Last 1 hour</option>
+        <option value="3h">Last 3 hours</option>
         <option value="today">Today</option>
         <option value="yesterday">Yesterday</option>
         <option value="7d">Last 7 days</option>
         <option value="month">This month</option>
         <option value="30d">Last 30 days</option>
-        <option value="custom">Custom dates…</option>
+        <option value="custom">Custom date &amp; time…</option>
       </select>
-      <span id="customRange" hidden><input type="date" id="dFrom"> → <input type="date" id="dTo"></span>
+      <span id="customRange" hidden><input type="datetime-local" id="dFrom"> → <input type="datetime-local" id="dTo"></span>
       <div class="spacer"></div>
       <div class="etotal"><b id="earnTotal">—</b><div id="earnSub"></div></div>
     </div>
+    <div class="quick" id="quick" hidden>
+      <button data-q="today-2-5">Today 2 AM → 5 AM</button>
+      <button data-q="last-night">Last night 12 AM → 6 AM</button>
+      <button data-q="now-start">To = now</button>
+    </div>
     <div class="days" id="earnDays"></div>
+    <button class="dtoggle" id="detToggle">▸ Show A–Z details per ID</button>
+    <div class="dwrap" id="earnDetails" hidden></div>
     <div class="enote" id="earnNote"></div>
+  </section>
   </section>
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty">Choose a team above.</div>
@@ -219,7 +240,8 @@
   let teams = [], team = ls.get('bpvm_team') || '', accounts = [], serverSkew = 0;
   let filter = 'ALL', selected = null, notifyOn = ls.get('bpvm_notify') === '1', passwordTeams = [];
   let serialsOpen = ls.get('bpvm_serials') !== '0';
-  let earnRows = [], earnSince = 0, earnRange = null, earnErr = '';
+  let earnRows = [], earnSince = 0, earnApproxUntil = 0, earnRange = null, earnErr = '', earnBucket = 'hour';
+  let detailsOpen = ls.get('bpvm_details') === '1';
   const prevStatus = {};
 
   const $ = id => document.getElementById(id);
@@ -381,22 +403,36 @@
     $('serials').classList.toggle('collapsed', !serialsOpen);
   }
 
-  /* ── earnings ─────────────────────────────────────────── */
+  /* ── earnings & time-range report ──────────────────────── */
+  const HOUR = 3600000, DAY = 86400000;
   const dayStart = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const dayKey = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-  const PERIOD_LABEL = { today: 'today', yesterday: 'yesterday', '7d': 'last 7 days', month: 'this month', '30d': 'last 30 days', custom: 'in range' };
+  const PERIOD_LABEL = { '1h': 'last hour', '3h': 'last 3 hours', today: 'today', yesterday: 'yesterday',
+                         '7d': 'last 7 days', month: 'this month', '30d': 'last 30 days', custom: 'in range' };
+  const pad = n => String(n).padStart(2, '0');
+  const toInput = t => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  const fmtTime = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const fmtDT = t => new Date(t).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
+  const fmtRange = (a, b) => sameDay(a, b - 1) ? `${fmtDT(a)} → ${fmtTime(b)}` : `${fmtDT(a)} → ${fmtDT(b)}`;
+  function dur(ms) {
+    const m = Math.round(ms / 60000);
+    if (m < 60) return m + 'm';
+    const h = Math.floor(m / 60);
+    return h < 24 ? `${h}h ${pad(m % 60)}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
+  }
 
   function periodRange() {
-    const p = $('period').value, n = new Date(), today = dayStart(n), DAY = 86400000;
-    if (p === 'today') return [today, Date.now() + 3600000];
+    const p = $('period').value, n = new Date(), today = dayStart(n), t = now();
+    if (p === '1h') return [t - HOUR, t + 60000];
+    if (p === '3h') return [t - 3 * HOUR, t + 60000];
+    if (p === 'today') return [today, t + 60000];
     if (p === 'yesterday') return [dayStart(new Date(today - DAY / 2)), today];
-    if (p === '7d') return [dayStart(new Date(today - 6 * DAY + DAY / 2)), Date.now() + 3600000];
-    if (p === 'month') return [new Date(n.getFullYear(), n.getMonth(), 1).getTime(), Date.now() + 3600000];
-    if (p === '30d') return [dayStart(new Date(today - 29 * DAY + DAY / 2)), Date.now() + 3600000];
-    const f = $('dFrom').value, t = $('dTo').value;
-    if (!f || !t) return null;
-    const [fy, fm, fd] = f.split('-').map(Number), [ty, tm, td] = t.split('-').map(Number);
-    const from = new Date(fy, fm - 1, fd).getTime(), to = new Date(ty, tm - 1, td + 1).getTime();
+    if (p === '7d') return [dayStart(new Date(today - 6 * DAY + DAY / 2)), t + 60000];
+    if (p === 'month') return [new Date(n.getFullYear(), n.getMonth(), 1).getTime(), t + 60000];
+    if (p === '30d') return [dayStart(new Date(today - 29 * DAY + DAY / 2)), t + 60000];
+    const f = $('dFrom').value, e = $('dTo').value;
+    if (!f || !e) return null;
+    const from = new Date(f).getTime(), to = new Date(e).getTime();   // datetime-local = viewer's local time
     return to > from ? [from, to] : null;
   }
 
@@ -404,19 +440,23 @@
     if (!team || !tokenFor(team)) return;
     const range = periodRange();
     earnRange = range;
-    if (!range) { earnRows = []; earnErr = 'Choose both dates'; renderEarnings(); return; }
+    if (!range) { earnRows = []; earnErr = 'Choose a start and an end time (end after start)'; renderEarnings(); return; }
+    earnBucket = range[1] - range[0] <= 2 * DAY ? 'hour' : 'day';
     const asked = team;
     try {
-      const r = await fetch(`/api/earnings?team=${encodeURIComponent(team)}&from=${range[0]}&to=${range[1]}`, { headers: { 'X-Token': tokenFor(team) } });
+      const q = `team=${encodeURIComponent(team)}&from=${range[0]}&to=${range[1]}&tz=${new Date().getTimezoneOffset()}&bucket=${earnBucket}`;
+      const r = await fetch('/api/earnings?' + q, { headers: { 'X-Token': tokenFor(team) } });
       if (asked !== team || earnRange !== range) return;
       if (!r.ok) { earnErr = 'Could not load earnings'; earnRows = []; }
-      else { const d = await r.json(); earnRows = d.rows || []; earnSince = d.trackingSince || 0; earnErr = ''; }
+      else {
+        const d = await r.json();
+        earnRows = d.rows || []; earnSince = d.trackingSince || 0; earnApproxUntil = d.approxUntil || 0; earnErr = '';
+      }
     } catch (e) { earnErr = 'Server not reachable'; }
     renderEarnings(); render();
   }
 
-  const sumObj = o => Object.values(o || {}).reduce((x, y) => x + y, 0);
-  function earnedFor(key) { const r = earnRows.find(x => x.key === key); return r ? sumObj(r.earned) : 0; }
+  function earnedFor(key) { const r = earnRows.find(x => x.key === key); return r ? r.earned : 0; }
   function earnedLine(a) {
     if (!earnRange || earnErr) return '';
     const c = earnedFor(a.key);
@@ -424,38 +464,86 @@
   }
 
   function renderEarnings() {
-    $('customRange').hidden = $('period').value !== 'custom';
-    if (earnErr) { $('earnTotal').textContent = '—'; $('earnSub').textContent = earnErr; $('earnDays').innerHTML = ''; return; }
+    const custom = $('period').value === 'custom';
+    $('customRange').hidden = !custom;
+    $('quick').hidden = !custom;
+    if (earnErr || !earnRange) {
+      $('earnTotal').textContent = '—'; $('earnSub').textContent = earnErr; $('earnDays').innerHTML = '';
+      $('earnDetails').innerHTML = ''; return;
+    }
+    const [from, to] = earnRange, end = Math.min(to, now());
     const rows = selected ? earnRows.filter(r => r.key === selected) : earnRows;
     const sel = selected && accounts.find(a => a.key === selected);
-    let total = 0, payouts = 0, active = 0;
-    const byDay = new Map();
+    let total = 0, collected = 0, active = 0;
+    const byBucket = new Map();
     for (const r of rows) {
-      const e = sumObj(r.earned);
-      total += e; payouts += sumObj(r.payouts);
-      if (e > 0) active++;
-      for (const [h, c] of Object.entries(r.earned || {})) { const k = dayKey(Number(h)); byDay.set(k, (byDay.get(k) || 0) + c); }
+      total += r.earned; collected += r.collected;
+      if (r.earned > 0) active++;
+      for (const [b, c] of Object.entries(r.buckets || {})) byBucket.set(Number(b), (byBucket.get(Number(b)) || 0) + c);
     }
     $('earnTotal').textContent = money(total);
     $('earnSub').textContent = (sel ? `${idLabel(sel)} · ${sel.mail}` : `${active} of ${rows.length} IDs earned`) +
-      ` · ${PERIOD_LABEL[$('period').value]}` + (payouts ? ` · collected ${money(payouts)}` : '');
+      ` · ${fmtRange(from, end)}` + (collected ? ` · collected ${money(collected)}` : '');
 
-    // One bar per day when the range is more than one day
+    // Bars: one per hour (ranges up to 2 days) or one per day
     let html = '';
-    if (earnRange && earnRange[1] - earnRange[0] > 26 * 3600000) {
-      const days = [];
-      for (let t = earnRange[0]; t < Math.min(earnRange[1], Date.now() + 1); t = dayStart(new Date(t + 36 * 3600000))) days.push(dayKey(t));
-      const max = Math.max(1, ...days.map(k => byDay.get(k) || 0));
-      html = days.map(k => {
-        const c = byDay.get(k) || 0, [y, m, d] = k.split('-').map(Number);
-        const label = new Date(y, m - 1, d).toLocaleDateString([], { day: 'numeric', month: 'short', weekday: 'short' });
+    const size = earnBucket === 'day' ? DAY : HOUR;
+    const off = -new Date().getTimezoneOffset() * 60000;
+    const bStart = t => Math.floor((t + off) / size) * size - off;
+    if (end - from > (size === HOUR ? HOUR : 26 * HOUR)) {
+      const list = [];
+      for (let b = bStart(from); b < end; b += size) list.push(b);
+      const max = Math.max(1, ...list.map(b => byBucket.get(b) || 0));
+      html = list.map(b => {
+        const c = byBucket.get(b) || 0, a = Math.max(b, from), z = Math.min(b + size, end);
+        const label = size === DAY
+          ? new Date(b).toLocaleDateString([], { day: 'numeric', month: 'short', weekday: 'short' })
+          : `${fmtTime(a)}–${fmtTime(z)}`;
         return `<div class="day"><span>${label}</span><span class="bar"><i style="width:${(c / max * 100).toFixed(1)}%"></i></span><span class="amt">${money(c)}</span></div>`;
       }).join('');
     }
     $('earnDays').innerHTML = html;
-    $('earnNote').textContent = earnSince
-      ? `Counted from balance increases reported by the script. Tracking since ${new Date(earnSince).toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}. Collected/payout money is not counted as earning.`
-      : '';
+
+    // A–Z table per ID
+    $('detToggle').textContent = (detailsOpen ? '▾ Hide' : '▸ Show') + ' A–Z details per ID';
+    $('earnDetails').hidden = !detailsOpen;
+    if (detailsOpen) {
+      const span = Math.max(1, end - from);
+      const byKey = new Map(accounts.map(a => [a.key, a]));
+      const tIdx = a => { const i = teams.findIndex(t => t.name === a.team); return i < 0 ? 999 : i; };
+      const list = rows.map(r => ({ r, a: byKey.get(r.key) || { key: r.key, mail: r.mail } }))
+        .sort((x, y) => tIdx(x.a) - tIdx(y.a) || serialNum(x.a) - serialNum(y.a));
+      let tb = 0, tc = 0, tbl = 0;
+      const body = list.map(({ r, a }) => {
+        tb += r.earned; tc += r.collected; tbl += r.blockedMs;
+        const blocks = r.blocks.map(b => `${fmtDT(b.at)} → ${b.endedAt ? fmtTime(b.endedAt) : (b.unlockAt ? fmtTime(b.unlockAt) + ' (expected)' : 'still blocked')}`).join('<br>');
+        const online = r.onlineMs ? Math.min(100, Math.round(r.onlineMs / span * 100)) + '%' : (r.firstSeen ? '1 check' : '—');
+        const s = statusOf(a);
+        return `<tr>
+          <td>${team === 'ALL' && a.team ? esc(a.team) + ' · ' : ''}${esc(idLabel(a))}</td>
+          <td class="m">${esc(r.mail)}</td>
+          <td class="n ${r.earned ? 'g' : 'mu'}">${money(r.earned)}</td>
+          <td class="n ${r.collected ? '' : 'mu'}">${money(r.collected)}</td>
+          <td class="n ${r.blockedMs ? 'r' : 'mu'}">${r.blockedMs ? dur(r.blockedMs) : '—'}</td>
+          <td class="${blocks ? '' : 'mu'}" style="white-space:nowrap">${blocks || '—'}</td>
+          <td class="n">${online}</td>
+          <td class="mu" style="white-space:nowrap">${r.firstSeen ? fmtTime(r.firstSeen) + ' – ' + fmtTime(r.lastSeen) : '—'}</td>
+          <td style="white-space:nowrap">${LABEL[s]}</td></tr>`;
+      }).join('');
+      $('earnDetails').innerHTML = `<table class="det"><thead><tr>
+        <th>ID</th><th>Mail</th><th>Earned</th><th>Collected</th><th>Blocked</th><th>Blocked at → unlock</th>
+        <th>Script online</th><th>Reports</th><th>Now</th></tr></thead><tbody>${body}
+        <tr class="tot"><td colspan="2">Total (${list.length} IDs)</td><td class="n g">${money(tb)}</td><td class="n">${money(tc)}</td>
+        <td class="n">${tbl ? dur(tbl) : '—'}</td><td colspan="4"></td></tr></tbody></table>`;
+    }
+
+    // Honest notes about what the numbers are based on
+    const notes = [];
+    notes.push('Real data only: money is counted when the script sees the balance go up (it checks every 60 seconds). Collected/payout money is not counted as earning.');
+    if (earnSince && from < earnSince) notes.push(`No data before ${fmtDT(earnSince)} (tracking started then).`);
+    if (earnApproxUntil && from < earnApproxUntil) notes.push(`Before ${fmtDT(earnApproxUntil)} the old version saved earnings per hour, so those times are rounded to the hour.`);
+    if (rows.some(r => r.earned && r.onlineMs < (end - from) * 0.95)) notes.push('If "Script online" is below 100%, votes made while the script was off are counted when it comes back.');
+    $('earnNote').innerHTML = notes.map(esc).join('<br>');
   }
 
   function cardHtml(a) {
@@ -621,16 +709,21 @@
   loadTeams().then(() => { if (team) openTeam(team); else render(); });
   setInterval(loadTeams, 60000);
   setInterval(poll, POLL_MS);
-  setInterval(loadEarnings, 60000);
+  setInterval(loadEarnings, 10000);
   $('period').value = ls.get('bpvm_period') || 'today';
-  $('period').addEventListener('change', () => {
-    ls.set('bpvm_period', $('period').value);
-    if ($('period').value === 'custom' && !$('dFrom').value) {
-      const t = dayKey(Date.now()); $('dFrom').value = t; $('dTo').value = t;
-    }
+  const setCustom = (a, b) => { $('dFrom').value = toInput(a); $('dTo').value = toInput(b); };
+  if (!$('dFrom').value) setCustom(dayStart(new Date()), now());
+  $('period').addEventListener('change', () => { ls.set('bpvm_period', $('period').value); loadEarnings(); });
+  $('dFrom').addEventListener('change', loadEarnings);
+  $('quick').addEventListener('click', e => {
+    const q = e.target.closest('[data-q]'); if (!q) return;
+    const t0 = dayStart(new Date());
+    if (q.dataset.q === 'today-2-5') setCustom(t0 + 2 * HOUR, t0 + 5 * HOUR);
+    if (q.dataset.q === 'last-night') setCustom(t0, t0 + 6 * HOUR);
+    if (q.dataset.q === 'now-start') setCustom(new Date($('dFrom').value).getTime() || t0, now());
     loadEarnings();
   });
-  $('dFrom').addEventListener('change', loadEarnings);
+  $('detToggle').addEventListener('click', () => { detailsOpen = !detailsOpen; ls.set('bpvm_details', detailsOpen ? '1' : '0'); renderEarnings(); });
   $('dTo').addEventListener('change', loadEarnings);
   setInterval(() => { if (team && tokenFor(team)) { render(); checkTransitions(); } }, 1000);
 })();

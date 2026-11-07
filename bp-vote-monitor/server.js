@@ -30,32 +30,98 @@ let accounts = readJson(DATA, {});
 let sheet    = readJson(SHEET_CACHE, { rows: [], teams: [], fetchedAt: 0 });
 let sheetError = '';
 
-/* Earnings: every report compares the balance with the last one for that mail.
-   Balance up   → earned (stored per mail per hour).
-   Balance down → payout / collect (stored separately, never counted as earning).
-   The first report of a mail only sets the starting point, so old balance is never counted. */
+/* History per mail, used for earnings and the time-range report.
+   Every report compares the balance with the last one for that mail:
+     balance up   → earning  event [time, +cents]
+     balance down → collect  event [time, -cents]   (never counted as earning)
+   The first report of a mail only sets the starting point, so old balance is never counted.
+   Also stored: state changes (RUNNING / BLOCKED ...) and when the script was online. */
 const EARN_FILE = path.join(__dirname, 'earnings.json');
+const ONLINE_GAP_MS = 3 * 60 * 1000;      // reports closer than this = script was online in between
 let earn = readJson(EARN_FILE, {});
-earn.last = earn.last || {}; earn.hours = earn.hours || {}; earn.payouts = earn.payouts || {};
+let migratedEarn = false;
 earn.startedAt = earn.startedAt || Date.now();
-let earnTimer = null;
-function saveEarn() {
-  clearTimeout(earnTimer);
-  earnTimer = setTimeout(() => {
-    fs.writeFile(EARN_FILE + '.tmp', JSON.stringify(earn), err => { if (!err) fs.rename(EARN_FILE + '.tmp', EARN_FILE, () => {}); });
-  }, 500);
+earn.last = earn.last || {};   // mail → last balance (cents)
+earn.ev   = earn.ev   || {};   // mail → [[time, deltaCents, approx?], ...]
+earn.st   = earn.st   || {};   // mail → [[time, state, unlockAt], ...]
+earn.on   = earn.on   || {};   // mail → [[start, end], ...]
+// Older versions stored earnings per hour. Keep that data as events at the start of the hour,
+// marked approximate, and remember until when times are only hour-accurate.
+if (earn.hours || earn.payouts) {
+  for (const [bucket, sign] of [[earn.hours || {}, 1], [earn.payouts || {}, -1]]) {
+    for (const [k, hrs] of Object.entries(bucket)) {
+      earn.ev[k] = earn.ev[k] || [];
+      for (const [h, c] of Object.entries(hrs)) earn.ev[k].push([Number(h), sign * c, 1]);
+      earn.ev[k].sort((a, b) => a[0] - b[0]);
+    }
+  }
+  earn.approxUntil = Date.now();
+  delete earn.hours; delete earn.payouts;
+  migratedEarn = true;
 }
-function trackEarning(mail, bal, now) {
-  const k = norm(mail);
-  if (!k || bal === null || bal === undefined) return;
-  const prev = earn.last[k];
-  earn.last[k] = bal;
+let earnDirty = false;
+if (migratedEarn) saveEarn();
+function saveEarn() {
+  if (earnDirty) return;            // throttle: write at most every 5 seconds
+  earnDirty = true;
+  setTimeout(() => {
+    earnDirty = false;
+    fs.writeFile(EARN_FILE + '.tmp', JSON.stringify(earn), err => { if (!err) fs.rename(EARN_FILE + '.tmp', EARN_FILE, () => {}); });
+  }, 5000);
+}
+function trackHistory(mail, state, bal, unlockAt, now) {
+  const k = String(mail || '').trim().toUpperCase();
+  if (!k) return;
+  // online intervals
+  const on = earn.on[k] = earn.on[k] || [];
+  const last = on[on.length - 1];
+  if (last && now - last[1] <= ONLINE_GAP_MS) last[1] = now; else on.push([now, now]);
+  // state changes
+  const st = earn.st[k] = earn.st[k] || [];
+  const ls = st[st.length - 1];
+  if (!ls || ls[1] !== state) st.push([now, state, state === 'BLOCKED' ? unlockAt : null]);
+  else if (state === 'BLOCKED' && unlockAt) ls[2] = unlockAt;
+  // balance changes
+  if (state !== 'LOGGED_OUT' && bal !== null && bal !== undefined) {
+    const prev = earn.last[k];
+    earn.last[k] = bal;
+    if (prev !== undefined && prev !== null && bal !== prev) (earn.ev[k] = earn.ev[k] || []).push([now, bal - prev]);
+  }
   saveEarn();
-  if (prev === undefined || prev === null || bal === prev) return;
-  const hour = Math.floor(now / 3600000) * 3600000;
-  const bucket = bal > prev ? earn.hours : earn.payouts;
-  bucket[k] = bucket[k] || {};
-  bucket[k][hour] = (bucket[k][hour] || 0) + Math.abs(bal - prev);
+}
+
+// Everything about one mail between from and to. bucketStart(t) groups earnings for the chart.
+function historyFor(mail, from, to, bucketStart) {
+  const k = String(mail || '').trim().toUpperCase();
+  const out = { earned: 0, collected: 0, earnEvents: 0, buckets: {}, blocks: [], blockedMs: 0, onlineMs: 0,
+                firstSeen: null, lastSeen: null, stateAtStart: null, approx: false };
+  for (const [t, d, approx] of earn.ev[k] || []) {
+    if (t < from || t >= to) continue;
+    if (approx) out.approx = true;
+    if (d > 0) { out.earned += d; out.earnEvents++; const b = bucketStart(t); out.buckets[b] = (out.buckets[b] || 0) + d; }
+    else out.collected += -d;
+  }
+  for (const [a, b] of earn.on[k] || []) {
+    const s = Math.max(a, from), e = Math.min(b, to);
+    if (e >= s && b >= from && a < to) {
+      out.onlineMs += e - s;
+      if (out.firstSeen === null) out.firstSeen = Math.max(a, from);
+      out.lastSeen = Math.min(b, to);
+    }
+  }
+  const st = earn.st[k] || [];
+  for (let i = 0; i < st.length; i++) {
+    const [t, state, unlockAt] = st[i];
+    const next = st[i + 1] ? st[i + 1][0] : Infinity;
+    if (t < from && next > from) out.stateAtStart = state;
+    if (state !== 'BLOCKED') continue;
+    // A block lasts until the unlock time the site gave, or until the next state change, whichever is first
+    const end = Math.min(unlockAt || next, next);
+    if (end <= from || t >= to) continue;
+    out.blocks.push({ at: t, unlockAt: unlockAt || null, endedAt: end === Infinity ? null : end });
+    out.blockedMs += Math.min(end, to, Date.now()) - Math.max(t, from);
+  }
+  return out;
 }
 
 let saveTimer = null;
@@ -245,7 +311,7 @@ function handleReport(b) {
   acc.stateSince = prev.state !== state ? now : (prev.stateSince || now);
   accounts[id] = acc;
   save();
-  if (state !== 'LOGGED_OUT') trackEarning(acc.email, acc.totalBalanceCents, now);
+  trackHistory(acc.email, state, acc.totalBalanceCents, acc.unlockAt, now);
   return { ok: true };
 }
 
@@ -312,20 +378,19 @@ http.createServer(async (req, res) => {
         return send(res, 200, { now: Date.now(), team, scope, ...extra, accounts: view(scope, team) });
       }
 
-      // Earnings per ID per hour for a time range (same login rules as /api/accounts)
+      // Time-range report per ID (same login rules as /api/accounts).
+      // bucket=hour|day groups earnings by the viewer's local time (tz = minutes from getTimezoneOffset()).
       if (p === '/api/earnings' && req.method === 'GET') {
         const team = url.searchParams.get('team') || '';
         if (!mayOpen(scope, team)) return send(res, 401, { error: 'login required' });
         const from = Number(url.searchParams.get('from')) || 0;
-        const to = Number(url.searchParams.get('to')) || Date.now();
-        const pick = (obj) => {
-          const out = {};
-          for (const [h, c] of Object.entries(obj || {})) { const t = Number(h); if (t >= from && t < to) out[h] = c; }
-          return out;
-        };
-        const rows = view(scope, team).map(a => ({ key: a.key, mail: a.mail,
-          earned: pick(earn.hours[norm(a.mail)]), payouts: pick(earn.payouts[norm(a.mail)]) }));
-        return send(res, 200, { from, to, trackingSince: earn.startedAt, rows });
+        const to = Math.min(Number(url.searchParams.get('to')) || Date.now(), Date.now() + 60000);
+        const off = -(Number(url.searchParams.get('tz')) || 0) * 60000;     // local = utc + off
+        const size = url.searchParams.get('bucket') === 'day' ? 86400000 : 3600000;
+        const bucketStart = t => Math.floor((t + off) / size) * size - off;
+        const rows = view(scope, team).map(a => ({ key: a.key, mail: a.mail, ...historyFor(a.mail, from, to, bucketStart) }));
+        return send(res, 200, { from, to, now: Date.now(), trackingSince: earn.startedAt,
+                                approxUntil: earn.approxUntil || null, rows });
       }
 
       // Admin only: set a team's (or the admin "ALL") password
