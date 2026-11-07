@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        BP Worker Vote Monitor (Multi-Account Reporter)
 // @namespace   https://www.bpworker.com/
-// @version     1.0
+// @version     1.1
 // @description Reads the bpworker.com /vote page (Running / Blocked, unlock time, balance, available votes) and reports it to your Vote Monitor server so all accounts show on one dashboard.
 // @match       https://www.bpworker.com/*
 // @match       https://bpworker.com/*
@@ -9,7 +9,7 @@
 // @grant       GM_getValue
 // @grant       GM_setValue
 // @grant       GM_registerMenuCommand
-// @connect     38.58.179.188
+// @connect     50.117.3.240
 // @connect     localhost
 // @connect     127.0.0.1
 // @connect     *
@@ -22,7 +22,7 @@
   /* ── CONFIG ─────────────────────────────────────────────
      SERVER_URL / SECRET can also be changed from the Tampermonkey
      menu ("⚙ Set server URL" / "🔑 Set secret key"), per browser. */
-  const DEFAULT_SERVER_URL = 'http://38.58.179.188:3100';
+  const DEFAULT_SERVER_URL = 'http://50.117.3.240:3100';
   const DEFAULT_SECRET     = '';          // same as SECRET on the server (optional)
   const CHECK_EVERY_MS     = 60 * 1000;   // how often to re-read /vote
   const VOTE_URL           = location.origin + '/vote';

@@ -54,14 +54,14 @@ Firewall e port **3100** open rakhte hobe.
 ### 2. Script install (proti account er browser e)
 
 1. Tampermonkey e `BP_Vote_Monitor.user.js` install koro.
-2. Server URL default `http://38.58.179.188:3100`. Onno hole Tampermonkey menu → **⚙ Set server URL**.
+2. Server URL default `http://50.117.3.240:3100`. Onno hole Tampermonkey menu → **⚙ Set server URL**.
 3. SECRET dile menu → **🔑 Set secret key**.
 4. Optional: menu → **✏ Set nickname for this account** (dashboard e ei naam dekhabe).
 5. `https://www.bpworker.com/vote` ekta tab e khola rakho. Niche dan kone choto badge e status dekhabe.
 
 ### 3. Dashboard
 
-Browser e `http://38.58.179.188:3100` kholo (SECRET thakle `http://38.58.179.188:3100/?key=mypassword` ekbar).
+Browser e `http://50.117.3.240:3100` kholo (SECRET thakle `http://50.117.3.240:3100/?key=mypassword` ekbar).
 
 - Upore box e click korle filter hoy (Running / Blocked / Offline)
 - Naam e click korle rename kora jay
