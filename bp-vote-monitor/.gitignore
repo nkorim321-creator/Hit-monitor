@@ -5,3 +5,5 @@ token-secret.txt
 passwords.json
 run-server.bat
 server.log
+earnings.json
+earnings.json.tmp

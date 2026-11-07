@@ -111,6 +111,26 @@
   .pwrow .tn small.ok { color: var(--green); }
   .pwrow input { min-width: 0; }
   .pwmsg { font-size: 12px; min-height: 16px; margin-top: 6px; }
+  .sgroup.head { gap: 8px; }
+  .toggle { padding: 3px 10px; font-size: 12px; font-weight: 700; border-radius: 7px; }
+  .serials.collapsed .sgroup:not(.head) { display: none; }
+
+  .earn { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+  .earn-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .earn-top .et { font-weight: 700; font-size: 15px; }
+  .earn-top input[type=date] { padding: 5px 8px; color-scheme: dark; }
+  .etotal { text-align: right; }
+  .etotal b { font-size: 22px; color: var(--green); font-variant-numeric: tabular-nums; }
+  .etotal div { font-size: 11px; color: var(--muted); }
+  .days { display: grid; gap: 4px; margin-top: 10px; }
+  .day { display: grid; grid-template-columns: 90px 1fr 70px; gap: 8px; align-items: center; font-size: 12px; }
+  .day .bar { height: 10px; border-radius: 4px; background: var(--panel2); overflow: hidden; }
+  .day .bar i { display: block; height: 100%; background: var(--green); border-radius: 4px; }
+  .day .amt { text-align: right; font-variant-numeric: tabular-nums; }
+  .enote { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .earned { font-size: 12px; color: var(--green); margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .earned.zero { color: var(--muted); }
+  @media (max-width: 480px) { .etotal { text-align: left; width: 100%; } .day { grid-template-columns: 70px 1fr 60px; } }
   @media (max-width: 480px) { header { position: static; } main { padding: 10px; } .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -140,6 +160,24 @@
   </div>
 </header>
 <main>
+  <section class="earn" id="earnPanel" hidden>
+    <div class="earn-top">
+      <span class="et">💰 Earnings</span>
+      <select id="period">
+        <option value="today">Today</option>
+        <option value="yesterday">Yesterday</option>
+        <option value="7d">Last 7 days</option>
+        <option value="month">This month</option>
+        <option value="30d">Last 30 days</option>
+        <option value="custom">Custom dates…</option>
+      </select>
+      <span id="customRange" hidden><input type="date" id="dFrom"> → <input type="date" id="dTo"></span>
+      <div class="spacer"></div>
+      <div class="etotal"><b id="earnTotal">—</b><div id="earnSub"></div></div>
+    </div>
+    <div class="days" id="earnDays"></div>
+    <div class="enote" id="earnNote"></div>
+  </section>
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty">Choose a team above.</div>
 </main>
@@ -175,10 +213,13 @@
                del(k) { try { localStorage.removeItem(k); } catch (e) {} } };
   // Tokens (not passwords) are remembered per team in this browser
   const tokKey = t => 'bpvm_tok_' + t.toUpperCase();
-  const tokenFor = t => ls.get(tokKey(t)) || ls.get(tokKey('ALL')) || '';
+  // Each team button needs its own login. The admin login opens only ALL ID.
+  const tokenFor = t => ls.get(tokKey(t)) || '';
 
   let teams = [], team = ls.get('bpvm_team') || '', accounts = [], serverSkew = 0;
   let filter = 'ALL', selected = null, notifyOn = ls.get('bpvm_notify') === '1', passwordTeams = [];
+  let serialsOpen = ls.get('bpvm_serials') !== '0';
+  let earnRows = [], earnSince = 0, earnRange = null, earnErr = '';
   const prevStatus = {};
 
   const $ = id => document.getElementById(id);
@@ -227,7 +268,8 @@
     team = name; selected = null; filter = 'ALL'; accounts = [];
     ls.set('bpvm_team', team);
     renderTeams(); render();
-    if (!tokenFor(team)) showLogin(); else poll();
+    earnRows = []; earnRange = null;
+    if (!tokenFor(team)) showLogin(); else { poll(); loadEarnings(); }
   }
 
   /* ── login box ────────────────────────────────────────── */
@@ -248,7 +290,7 @@
       if (!r.ok) { $('loginErr').textContent = r.status === 401 ? 'Wrong password. Please try again.' : (d.error || 'Error'); $('pw').select(); return; }
       ls.set(tokKey(d.scope), d.token);
       $('login').hidden = true;
-      renderTeams(); poll();
+      renderTeams(); poll(); loadEarnings();
     } catch (err) { $('loginErr').textContent = 'Server not reachable'; }
   });
   $('loginClose').addEventListener('click', () => {
@@ -277,7 +319,7 @@
       const r = await fetch('/api/accounts?team=' + encodeURIComponent(team), { headers: { 'X-Token': tokenFor(team) } });
       if (asked !== team) return;
       if (r.status === 401) {
-        if (ls.get(tokKey(team))) ls.del(tokKey(team)); else ls.del(tokKey('ALL'));
+        ls.del(tokKey(team));
         accounts = []; renderTeams(); render();
         if (!tokenFor(team)) showLogin();
         return;
@@ -327,13 +369,93 @@
       groups.get(g).push(a);
     }
     const allChip = `<span class="chip ${selected === null ? 'sel' : ''}" data-sel="">All</span>`;
-    let html = `<div class="sgroup">${allChip}</div>`;
+    const sel = accounts.find(a => a.key === selected);
+    let html = `<div class="sgroup head"><button class="toggle" id="serialToggle" title="${serialsOpen ? 'Hide' : 'Show'} ID numbers">${serialsOpen ? '▾' : '▸'} IDs</button>${allChip}` +
+      (!serialsOpen && sel ? `<span class="chip ${statusOf(sel)} sel">${esc(team === 'ALL' && sel.team ? sel.team + ' ' : '')}${sel.unassigned ? '?' : esc(sel.serial)}</span>` : '') + `</div>`;
     for (const [g, list] of groups) {
       html += `<div class="sgroup">${g ? `<span class="gl">${esc(g)}</span>` : ''}` +
         list.map(a => `<span class="chip ${statusOf(a)} ${selected === a.key ? 'sel' : ''}" data-sel="${esc(a.key)}"
           title="${esc(a.mail)} · ${LABEL[statusOf(a)]}">${a.unassigned ? '?' : esc(a.serial)}</span>`).join('') + `</div>`;
     }
     $('serials').innerHTML = html;
+    $('serials').classList.toggle('collapsed', !serialsOpen);
+  }
+
+  /* ── earnings ─────────────────────────────────────────── */
+  const dayStart = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dayKey = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const PERIOD_LABEL = { today: 'today', yesterday: 'yesterday', '7d': 'last 7 days', month: 'this month', '30d': 'last 30 days', custom: 'in range' };
+
+  function periodRange() {
+    const p = $('period').value, n = new Date(), today = dayStart(n), DAY = 86400000;
+    if (p === 'today') return [today, Date.now() + 3600000];
+    if (p === 'yesterday') return [dayStart(new Date(today - DAY / 2)), today];
+    if (p === '7d') return [dayStart(new Date(today - 6 * DAY + DAY / 2)), Date.now() + 3600000];
+    if (p === 'month') return [new Date(n.getFullYear(), n.getMonth(), 1).getTime(), Date.now() + 3600000];
+    if (p === '30d') return [dayStart(new Date(today - 29 * DAY + DAY / 2)), Date.now() + 3600000];
+    const f = $('dFrom').value, t = $('dTo').value;
+    if (!f || !t) return null;
+    const [fy, fm, fd] = f.split('-').map(Number), [ty, tm, td] = t.split('-').map(Number);
+    const from = new Date(fy, fm - 1, fd).getTime(), to = new Date(ty, tm - 1, td + 1).getTime();
+    return to > from ? [from, to] : null;
+  }
+
+  async function loadEarnings() {
+    if (!team || !tokenFor(team)) return;
+    const range = periodRange();
+    earnRange = range;
+    if (!range) { earnRows = []; earnErr = 'Choose both dates'; renderEarnings(); return; }
+    const asked = team;
+    try {
+      const r = await fetch(`/api/earnings?team=${encodeURIComponent(team)}&from=${range[0]}&to=${range[1]}`, { headers: { 'X-Token': tokenFor(team) } });
+      if (asked !== team || earnRange !== range) return;
+      if (!r.ok) { earnErr = 'Could not load earnings'; earnRows = []; }
+      else { const d = await r.json(); earnRows = d.rows || []; earnSince = d.trackingSince || 0; earnErr = ''; }
+    } catch (e) { earnErr = 'Server not reachable'; }
+    renderEarnings(); render();
+  }
+
+  const sumObj = o => Object.values(o || {}).reduce((x, y) => x + y, 0);
+  function earnedFor(key) { const r = earnRows.find(x => x.key === key); return r ? sumObj(r.earned) : 0; }
+  function earnedLine(a) {
+    if (!earnRange || earnErr) return '';
+    const c = earnedFor(a.key);
+    return `<div class="earned ${c ? '' : 'zero'}">+${money(c)} ${PERIOD_LABEL[$('period').value]}</div>`;
+  }
+
+  function renderEarnings() {
+    $('customRange').hidden = $('period').value !== 'custom';
+    if (earnErr) { $('earnTotal').textContent = '—'; $('earnSub').textContent = earnErr; $('earnDays').innerHTML = ''; return; }
+    const rows = selected ? earnRows.filter(r => r.key === selected) : earnRows;
+    const sel = selected && accounts.find(a => a.key === selected);
+    let total = 0, payouts = 0, active = 0;
+    const byDay = new Map();
+    for (const r of rows) {
+      const e = sumObj(r.earned);
+      total += e; payouts += sumObj(r.payouts);
+      if (e > 0) active++;
+      for (const [h, c] of Object.entries(r.earned || {})) { const k = dayKey(Number(h)); byDay.set(k, (byDay.get(k) || 0) + c); }
+    }
+    $('earnTotal').textContent = money(total);
+    $('earnSub').textContent = (sel ? `${idLabel(sel)} · ${sel.mail}` : `${active} of ${rows.length} IDs earned`) +
+      ` · ${PERIOD_LABEL[$('period').value]}` + (payouts ? ` · collected ${money(payouts)}` : '');
+
+    // One bar per day when the range is more than one day
+    let html = '';
+    if (earnRange && earnRange[1] - earnRange[0] > 26 * 3600000) {
+      const days = [];
+      for (let t = earnRange[0]; t < Math.min(earnRange[1], Date.now() + 1); t = dayStart(new Date(t + 36 * 3600000))) days.push(dayKey(t));
+      const max = Math.max(1, ...days.map(k => byDay.get(k) || 0));
+      html = days.map(k => {
+        const c = byDay.get(k) || 0, [y, m, d] = k.split('-').map(Number);
+        const label = new Date(y, m - 1, d).toLocaleDateString([], { day: 'numeric', month: 'short', weekday: 'short' });
+        return `<div class="day"><span>${label}</span><span class="bar"><i style="width:${(c / max * 100).toFixed(1)}%"></i></span><span class="amt">${money(c)}</span></div>`;
+      }).join('');
+    }
+    $('earnDays').innerHTML = html;
+    $('earnNote').textContent = earnSince
+      ? `Counted from balance increases reported by the script. Tracking since ${new Date(earnSince).toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}. Collected/payout money is not counted as earning.`
+      : '';
   }
 
   function cardHtml(a) {
@@ -369,7 +491,7 @@
         <span class="pill ${s}">${LABEL[s]}</span>
       </div>
       <div class="big">${timer}
-        <div class="bal"><b>${money(a.totalBalanceCents)}</b><div>balance</div></div></div>
+        <div class="bal"><b>${money(a.totalBalanceCents)}</b><div>balance</div>${earnedLine(a)}</div></div>
       ${cats && s !== 'BLOCKED' ? `<div class="cats">${cats}</div>` : ''}
       <div class="foot"><span>${footL || '&nbsp;'}</span><span>${footR}${del}</span></div>
     </div>`;
@@ -379,6 +501,7 @@
     const unlocked = team && tokenFor(team);
     $('teamView').hidden = !unlocked;
     $('pwBtn').hidden = team !== 'ALL';
+    $('earnPanel').hidden = !unlocked;
     if (!unlocked) {
       $('grid').innerHTML = '';
       $('empty').hidden = false;
@@ -387,6 +510,7 @@
     }
     renderStats();
     renderSerials();
+    renderEarnings();
     const q = $('q').value.trim().toLowerCase();
     const sort = $('sort').value;
     let list = accounts.filter(a => {
@@ -442,6 +566,9 @@
     filter = el.dataset.f === filter ? 'ALL' : el.dataset.f; selected = null; render();
   });
   $('serials').addEventListener('click', e => {
+    if (e.target.closest('#serialToggle')) {
+      serialsOpen = !serialsOpen; ls.set('bpvm_serials', serialsOpen ? '1' : '0'); render(); return;
+    }
     const el = e.target.closest('[data-sel]'); if (!el) return;
     selected = el.dataset.sel === '' || el.dataset.sel === selected ? null : el.dataset.sel;
     render();
@@ -494,6 +621,17 @@
   loadTeams().then(() => { if (team) openTeam(team); else render(); });
   setInterval(loadTeams, 60000);
   setInterval(poll, POLL_MS);
+  setInterval(loadEarnings, 60000);
+  $('period').value = ls.get('bpvm_period') || 'today';
+  $('period').addEventListener('change', () => {
+    ls.set('bpvm_period', $('period').value);
+    if ($('period').value === 'custom' && !$('dFrom').value) {
+      const t = dayKey(Date.now()); $('dFrom').value = t; $('dTo').value = t;
+    }
+    loadEarnings();
+  });
+  $('dFrom').addEventListener('change', loadEarnings);
+  $('dTo').addEventListener('change', loadEarnings);
   setInterval(() => { if (team && tokenFor(team)) { render(); checkTransitions(); } }, 1000);
 })();
 </script>

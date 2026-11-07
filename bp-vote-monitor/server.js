@@ -30,6 +30,34 @@ let accounts = readJson(DATA, {});
 let sheet    = readJson(SHEET_CACHE, { rows: [], teams: [], fetchedAt: 0 });
 let sheetError = '';
 
+/* Earnings: every report compares the balance with the last one for that mail.
+   Balance up   → earned (stored per mail per hour).
+   Balance down → payout / collect (stored separately, never counted as earning).
+   The first report of a mail only sets the starting point, so old balance is never counted. */
+const EARN_FILE = path.join(__dirname, 'earnings.json');
+let earn = readJson(EARN_FILE, {});
+earn.last = earn.last || {}; earn.hours = earn.hours || {}; earn.payouts = earn.payouts || {};
+earn.startedAt = earn.startedAt || Date.now();
+let earnTimer = null;
+function saveEarn() {
+  clearTimeout(earnTimer);
+  earnTimer = setTimeout(() => {
+    fs.writeFile(EARN_FILE + '.tmp', JSON.stringify(earn), err => { if (!err) fs.rename(EARN_FILE + '.tmp', EARN_FILE, () => {}); });
+  }, 500);
+}
+function trackEarning(mail, bal, now) {
+  const k = norm(mail);
+  if (!k || bal === null || bal === undefined) return;
+  const prev = earn.last[k];
+  earn.last[k] = bal;
+  saveEarn();
+  if (prev === undefined || prev === null || bal === prev) return;
+  const hour = Math.floor(now / 3600000) * 3600000;
+  const bucket = bal > prev ? earn.hours : earn.payouts;
+  bucket[k] = bucket[k] || {};
+  bucket[k][hour] = (bucket[k][hour] || 0) + Math.abs(bal - prev);
+}
+
 let saveTimer = null;
 function save() {
   clearTimeout(saveTimer);
@@ -81,6 +109,8 @@ function readToken(tok) {
 }
 // May a token holder see this team?
 const canSee = (scope, team) => scope === 'ALL' || (scope && norm(scope) === norm(team));
+// Which page a token may open: a team token opens only its own team, the admin token only "ALL ID"
+const mayOpen = (scope, team) => !!scope && (team === 'ALL' ? scope === 'ALL' : scope !== 'ALL' && norm(scope) === norm(team));
 
 // Slow down password guessing: max 10 wrong tries per IP per 10 minutes
 const fails = new Map();
@@ -215,6 +245,7 @@ function handleReport(b) {
   acc.stateSince = prev.state !== state ? now : (prev.stateSince || now);
   accounts[id] = acc;
   save();
+  if (state !== 'LOGGED_OUT') trackEarning(acc.email, acc.totalBalanceCents, now);
   return { ok: true };
 }
 
@@ -264,9 +295,10 @@ http.createServer(async (req, res) => {
         const b = await readBody(req);
         const team = str(b.team, 80).trim();
         const pw = str(b.password, 200);
-        // Admin password opens everything; a team password opens only that team
-        if (checkPassword('ALL', pw)) return send(res, 200, { token: makeToken('ALL'), scope: 'ALL' });
-        if (team !== 'ALL' && checkPassword(team, pw)) return send(res, 200, { token: makeToken(team), scope: team });
+        // A team password opens only that team. The admin password opens only "ALL ID".
+        if (team === 'ALL' ? checkPassword('ALL', pw) : checkPassword(team, pw)) {
+          return send(res, 200, { token: makeToken(team), scope: team });
+        }
         addFail(ip);
         return send(res, 401, { error: 'Wrong password' });
       }
@@ -275,9 +307,25 @@ http.createServer(async (req, res) => {
 
       if (p === '/api/accounts' && req.method === 'GET') {
         const team = url.searchParams.get('team') || '';
-        if (!scope || (team === 'ALL' ? scope !== 'ALL' : !canSee(scope, team))) return send(res, 401, { error: 'login required' });
+        if (!mayOpen(scope, team)) return send(res, 401, { error: 'login required' });
         const extra = scope === 'ALL' ? { sheetError, passwordTeams: Object.keys(passwords) } : {};
         return send(res, 200, { now: Date.now(), team, scope, ...extra, accounts: view(scope, team) });
+      }
+
+      // Earnings per ID per hour for a time range (same login rules as /api/accounts)
+      if (p === '/api/earnings' && req.method === 'GET') {
+        const team = url.searchParams.get('team') || '';
+        if (!mayOpen(scope, team)) return send(res, 401, { error: 'login required' });
+        const from = Number(url.searchParams.get('from')) || 0;
+        const to = Number(url.searchParams.get('to')) || Date.now();
+        const pick = (obj) => {
+          const out = {};
+          for (const [h, c] of Object.entries(obj || {})) { const t = Number(h); if (t >= from && t < to) out[h] = c; }
+          return out;
+        };
+        const rows = view(scope, team).map(a => ({ key: a.key, mail: a.mail,
+          earned: pick(earn.hours[norm(a.mail)]), payouts: pick(earn.payouts[norm(a.mail)]) }));
+        return send(res, 200, { from, to, trackingSince: earn.startedAt, rows });
       }
 
       // Admin only: set a team's (or the admin "ALL") password

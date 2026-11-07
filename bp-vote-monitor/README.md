@@ -64,10 +64,12 @@ Browser e `http://50.117.3.240:3100` kholo.
 
 - Upore **team button** (Google Sheet theke ashe): NOUSHAD, SUJON, Hirexology, Bhiya Self, ar **ALL ID** (shudhu admin).
 - Team e click korle oi team er password chay. Ekbar dile oi browser e ar chay na (**🔒 Logout** dile abar chaibe).
-- Team password diye shudhu nijer team er ID dekha jay. Admin (ALL ID) password diye shob team dekha jay.
-- Serial number (1, 2, 3 ...) e click korle shudhu oi ID dekhay. Number er rong: sobuj = Running, lal = Blocked, dhushor = Offline/No data.
+- Protiti team shudhu nijer password diye khule, baki team lock e thake. Admin password shudhu **ALL ID** khule (sheikhane shob team er ID ekshathe).
+- **▾ IDs** button diye serial number gula lukano / dekhano jay. Serial number (1, 2, 3 ...) e click korle shudhu oi ID dekhay. Number er rong: sobuj = Running, lal = Blocked, dhushor = Offline/No data.
 - Card e: **ID-number, Mail, Worker ID, BP Year** (sheet theke), ar status, unlock countdown, balance.
 - **🔔 Alerts** on korle kono ID unblock hole sound + notification ashbe.
+- **💰 Earnings**: Today / Yesterday / Last 7 days / This month / Last 30 days / Custom date. Team er total, din onujayi bar, ar protiti ID card e oi shomoyer earning.
+  Script er report e balance barle earning dhora hoy. Collect/payout e balance komle earning theke bad jay na. Earning tracking shuru hoy server update er por theke, ager earning jana nai.
 
 ### Team password set / change
 
