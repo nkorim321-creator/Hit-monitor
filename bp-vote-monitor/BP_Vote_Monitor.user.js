@@ -2,7 +2,7 @@
 // @name        BP Worker Vote Monitor (Multi-Account Reporter)
 // Works in Tampermonkey and Violentmonkey.
 // @namespace   https://www.bpworker.com/
-// @version     1.7
+// @version     1.8
 // @description Reads the bpworker.com /vote page (Running / Blocked, unlock time, balance, available votes) and reports it to your Vote Monitor server so all accounts show on one dashboard.
 // @match       https://www.bpworker.com/*
 // @match       https://bpworker.com/*
@@ -221,6 +221,35 @@
   /* ── MAIN LOOP ───────────────────────────────────────── */
   let timer = null, busy = false;
 
+  /* ── AUTO RELOAD when the block ends ─────────────────────
+     The open /vote page does not refresh by itself: its timer stops at 0:00.
+     When the timer hits 0:00 we check right away; if voting is open again
+     we reload the page ONE time (never twice within 2 minutes, so no reload loop). */
+  const ON_VOTE_PAGE = /^\/vote\/?$/.test(location.pathname);
+  const RELOAD_KEY = 'bpvm_lastAutoReload';
+  // Is the open page showing the "rate limit" / "paused" screen instead of the vote buttons?
+  const pageShowsWait = () => !document.querySelector('.category-row') &&
+    /rate limit|paused/i.test((document.querySelector('.notice') || {}).textContent || '');
+  function reloadOnce() {
+    let last = 0;
+    try { last = Number(sessionStorage.getItem(RELOAD_KEY)) || 0; } catch (e) {}
+    if (Date.now() - last < 2 * 60 * 1000) return false;
+    try { sessionStorage.setItem(RELOAD_KEY, String(Date.now())); } catch (e) {}
+    setBadge('#22c55e', '🟢 Voting open again · reloading page…');
+    setTimeout(() => location.reload(), 800);
+    return true;
+  }
+  if (ON_VOTE_PAGE) {
+    let zeroSeen = false;
+    setInterval(() => {
+      if (!pageShowsWait()) { zeroSeen = false; return; }
+      const t = ((document.querySelector('.notice-timer') || {}).textContent || '').trim();
+      const atZero = /^0*:?0*:?00$/.test(t) && !/[1-9]/.test(t);       // "0:00", "00:00", "0:00:00"
+      if (atZero && !zeroSeen) { zeroSeen = true; setTimeout(checkNow, 2000); }
+      if (!atZero) zeroSeen = false;
+    }, 1000);
+  }
+
   async function checkNow() {
     if (busy) return;
     busy = true;
@@ -262,6 +291,8 @@
 
       const icon  = { RUNNING: '🟢', BLOCKED: '🔴', PAUSED: '🟠', LOGGED_OUT: '⚪' }[s.state] || '🟡';
       const color = { RUNNING: '#22c55e', BLOCKED: '#ef4444', PAUSED: '#f97316' }[s.state] || '#fbbf24';
+      // The open page still shows the wait screen, but voting is open now → reload it once
+      if (ON_VOTE_PAGE && s.state === 'RUNNING' && pageShowsWait() && reloadOnce()) return;
       if (sent.ok) {
         setBadge(color, `${icon} ${s.state}  ·  synced ${new Date().toLocaleTimeString()}`);
       } else {
