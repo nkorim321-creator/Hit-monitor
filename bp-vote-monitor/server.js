@@ -249,7 +249,7 @@ refreshSheet();
 setInterval(refreshSheet, SHEET_REFRESH_MS);
 
 /* ── build the list a viewer may see ─────────────────────── */
-const PUBLIC_FIELDS = ['state', 'balanceCents', 'totalBalanceCents', 'rateLimitText', 'unlockAt', 'noticeText', 'waitText', 'waitUntil',
+const PUBLIC_FIELDS = ['state', 'balanceCents', 'totalBalanceCents', 'rateLimitText', 'unlockAt', 'lastUnlockAt', 'noticeText', 'waitText', 'waitUntil',
                        'categories', 'totalAvailable', 'lastSeen', 'stateSince'];
 function view(scope, team) {
   const byMail = new Map();
@@ -319,6 +319,13 @@ function handleReport(b) {
     lastSeen: now,
   };
   acc.stateSince = prev.state !== state ? now : (prev.stateSince || now);
+  // When a block ends, remember the unlock moment (for the 12-hour "Rest time" on the dashboard).
+  // Use the site's unlock time if it is known and already passed, otherwise the time we saw the change.
+  if (prev.state === 'BLOCKED' && state !== 'BLOCKED') {
+    acc.lastUnlockAt = prev.unlockAt && prev.unlockAt <= now ? prev.unlockAt : now;
+  } else {
+    acc.lastUnlockAt = prev.lastUnlockAt || null;
+  }
   accounts[id] = acc;
   save();
   trackHistory(acc.email, state, acc.totalBalanceCents, acc.unlockAt, now);
