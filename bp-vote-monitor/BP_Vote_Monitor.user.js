@@ -2,7 +2,7 @@
 // @name        BP Worker Vote Monitor (Multi-Account Reporter)
 // Works in Tampermonkey and Violentmonkey.
 // @namespace   https://www.bpworker.com/
-// @version     1.8
+// @version     1.9
 // @description Reads the bpworker.com /vote page (Running / Blocked, unlock time, balance, available votes) and reports it to your Vote Monitor server so all accounts show on one dashboard.
 // @match       https://www.bpworker.com/*
 // @match       https://bpworker.com/*
@@ -192,6 +192,10 @@
       (proxy
         ? 'The block comes from the proxy/VPN this browser uses, not from the server.\n' +
           'Fix: in the proxy/VPN settings, allow (bypass) the IP 50.117.3.240, or ask the proxy seller to allow port 80/3100.\n'
+        : r.fails.every(f => /timeout/.test(f.why))
+        ? 'The server did not answer at all. Usually the server program stopped or the server PC is off.\n' +
+          'Fix: open ' + DEFAULT_SERVER_URL + ' in a browser. If the dashboard does not open,\n' +
+          'log in to the server (Remote Desktop) and run install-windows.bat again (Run as administrator).\n'
         : 'Check:\n' +
           '1. Open ' + DEFAULT_SERVER_URL + ' in this same browser. Does the dashboard open?\n' +
           '   No → the server is off, or this PC/proxy cannot reach it.\n' +
@@ -296,7 +300,9 @@
       if (sent.ok) {
         setBadge(color, `${icon} ${s.state}  ·  synced ${new Date().toLocaleTimeString()}`);
       } else {
-        const short = sent.fails.map(f => /proxy\/VPN\/firewall/.test(f.why) ? `HTTP ${f.status} from proxy/VPN` : f.why.slice(0, 50)).join(' / ');
+        const allTimeout = sent.fails.every(f => /timeout/.test(f.why));
+        const short = allTimeout ? 'server not answering (is the server PC on and running?)'
+          : sent.fails.map(f => /proxy\/VPN\/firewall/.test(f.why) ? `HTTP ${f.status} from proxy/VPN` : f.why.slice(0, 50)).join(' / ');
         setBadge('#f59e0b', `${icon} ${s.state}  ·  ⚠ not sent: ${short}  (click for details)`);
         nextMs = Math.min(nextMs, 15000);   // retry soon
       }

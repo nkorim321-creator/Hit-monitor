@@ -42,11 +42,17 @@ if not defined ADMINPW goto askadmin
 set "ADMINPW="
 :haveadmin
 
+REM run-server.bat restarts the server 5 seconds after it stops for any reason
 (
   echo @echo off
   echo cd /d "%~dp0"
   echo set PORTS=3100,80
+  echo :loop
+  echo echo [%%date%% %%time%%] starting server ^>^> server.log
   echo "%NODE%" "%~dp0server.js" ^>^> server.log 2^>^&1
+  echo echo [%%date%% %%time%%] server stopped, restarting in 5 seconds ^>^> server.log
+  echo ping -n 6 127.0.0.1 ^>nul
+  echo goto loop
 ) > run-server.bat
 
 netsh advfirewall firewall delete rule name="BP Vote Monitor" >nul 2>&1
@@ -54,10 +60,17 @@ netsh advfirewall firewall add rule name="BP Vote Monitor" dir=in action=allow p
 echo  Firewall: ports 3100 and 80 opened.
 
 schtasks /end /tn "BP Vote Monitor" >nul 2>&1
+REM stop an old restart loop first, then the server itself
+powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'cmd.exe' -and $_.CommandLine -like '*run-server.bat*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>&1
 powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*%~dp0server.js*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>&1
-schtasks /create /tn "BP Vote Monitor" /tr "\"%~dp0run-server.bat\"" /sc onstart /ru SYSTEM /rl HIGHEST /f >nul
+REM Startup task with no time limit (schtasks /create would stop it after 72 hours) and restart on failure
+powershell -NoProfile -Command "$a = New-ScheduledTaskAction -Execute '%~dp0run-server.bat'; $t = New-ScheduledTaskTrigger -AtStartup; $s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable; Register-ScheduledTask -TaskName 'BP Vote Monitor' -Action $a -Trigger $t -Settings $s -User 'SYSTEM' -RunLevel Highest -Force | Out-Null"
+if errorlevel 1 (
+  echo  [!] Could not create the startup task with PowerShell, using schtasks instead.
+  schtasks /create /tn "BP Vote Monitor" /tr "\"%~dp0run-server.bat\"" /sc onstart /ru SYSTEM /rl HIGHEST /f >nul
+)
 schtasks /run /tn "BP Vote Monitor" >nul
-echo  Startup task created and server started.
+echo  Startup task created (no time limit, auto-restart) and server started.
 
 timeout /t 3 >nul
 echo.

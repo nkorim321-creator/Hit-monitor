@@ -440,6 +440,13 @@ const server = async (req, res) => {
   });
 };
 
+// Log crashes with the time; run-server.bat starts the server again 5 seconds later
+process.on('uncaughtException', e => {
+  console.log(`[${new Date().toISOString()}] CRASH: ${e && e.stack || e}`);
+  process.exit(1);
+});
+process.on('unhandledRejection', e => console.log(`[${new Date().toISOString()}] Unhandled: ${e && e.stack || e}`));
+
 let listening = 0;
 for (const port of PORTS) {
   const srv = http.createServer(server);
@@ -449,7 +456,7 @@ for (const port of PORTS) {
   });
   srv.listen(port, () => {
     listening++;
-    console.log(`BP Vote Monitor running → http://localhost${port === 80 ? '' : ':' + port}`);
+    console.log(`[${new Date().toISOString()}] BP Vote Monitor running → http://localhost${port === 80 ? '' : ':' + port}`);
   });
 }
 if (!passwords.ALL) console.log('WARNING: no admin password yet. Run install-windows.bat, or: node set-password.js ALL "yourpassword"');
