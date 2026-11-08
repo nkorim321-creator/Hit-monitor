@@ -80,6 +80,7 @@
   .big { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 0 6px; }
   .timer { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .timer.red { color: var(--red); } .timer.orange { color: var(--orange); font-size: 22px; }
+  .soff { color: var(--amber); font-weight: 600; }
   .notice { font-size: 12px; color: var(--muted); margin-top: 4px; } .timer.green { color: var(--green); } .timer.gray { color: var(--muted); font-size: 15px; }
   .bal { text-align: right; }
   .bal b { font-size: 18px; }
@@ -200,7 +201,7 @@
         <option value="30d">Last 30 days</option>
         <option value="custom">Custom date &amp; time…</option>
       </select>
-      <span id="customRange" hidden><span class="dt"><label for="dFrom">From</label><input type="datetime-local" id="dFrom"></span><span class="dt"><label for="dTo">To</label><input type="datetime-local" id="dTo"></span></span>
+      <span id="customRange" hidden title="Bangladesh time"><span class="dt"><label for="dFrom">From (BD)</label><input type="datetime-local" id="dFrom"></span><span class="dt"><label for="dTo">To (BD)</label><input type="datetime-local" id="dTo"></span></span>
       <div class="spacer"></div>
       <div class="etotal"><b id="earnTotal">—</b><div id="earnSub"></div></div>
     </div>
@@ -273,10 +274,13 @@
     return Math.floor(s / 86400) + 'd ago';
   }
 
+  const stale = a => a.reported && now() - a.lastSeen > OFFLINE_AFTER_MS;   // script (Chrome) not reporting
   function statusOf(a) {
     if (!a.reported) return 'NODATA';
-    if (now() - a.lastSeen > OFFLINE_AFTER_MS) return 'OFFLINE';
-    if (a.state === 'BLOCKED') return (a.unlockAt && a.unlockAt <= now()) ? 'READY' : 'BLOCKED';
+    // The unlock / pause end time comes from the site, so it stays true even when Chrome is closed
+    if (a.state === 'BLOCKED' && a.unlockAt) return a.unlockAt <= now() ? 'READY' : 'BLOCKED';
+    if (a.state === 'PAUSED' && a.waitUntil && a.waitUntil > now()) return 'PAUSED';
+    if (stale(a)) return 'OFFLINE';
     return a.state || 'UNKNOWN';
   }
   const LABEL = { RUNNING: 'RUNNING', BLOCKED: 'BLOCKED', PAUSED: 'PAUSED', READY: 'UNLOCKED', OFFLINE: 'OFFLINE',
@@ -365,7 +369,7 @@
       const onlySeen = fresh.length === accounts.length && sigOf(fresh) === sigOf(accounts);
       accounts = fresh;
       if (d.passwordTeams) passwordTeams = d.passwordTeams;
-      $('conn').textContent = d.sheetError ? '⚠ Sheet: ' + d.sheetError : 'updated ' + new Date().toLocaleTimeString();
+      $('conn').textContent = d.sheetError ? '⚠ Sheet: ' + d.sheetError : 'updated ' + fmtClock(Date.now()) + ' (BD time)';
       $('conn').className = d.sheetError ? 'conn err' : 'conn';
       if (onlySeen && statusSig() === lastSig) {
         for (const a of accounts) {
@@ -427,14 +431,22 @@
 
   /* ── earnings & time-range report ──────────────────────── */
   const HOUR = 3600000, DAY = 86400000;
-  const dayStart = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  // All times on the dashboard are Bangladesh time, whatever the viewer's PC/VPS clock zone is.
+  // Bangladesh has no daylight saving, so it is always UTC+6.
+  const TZ = 'Asia/Dhaka', TZ_OFF = 6 * HOUR;
+  const bdParts = t => { const d = new Date(t + TZ_OFF); return { y: d.getUTCFullYear(), m: d.getUTCMonth(), d: d.getUTCDate(), h: d.getUTCHours(), mi: d.getUTCMinutes() }; };
+  const dayStart = t => Math.floor((t + TZ_OFF) / DAY) * DAY - TZ_OFF;        // BD midnight
+  const fromInput = v => { const [d, tm] = v.split('T'); const [y, m, dd] = d.split('-').map(Number); const [h, mi] = (tm || '0:0').split(':').map(Number);
+                           return Date.UTC(y, m - 1, dd, h, mi) - TZ_OFF; };
   const PERIOD_LABEL = { today: 'today', yesterday: 'yesterday',
                          '7d': 'last 7 days', month: 'this month', '30d': 'last 30 days', custom: 'in range' };
   const pad = n => String(n).padStart(2, '0');
-  const toInput = t => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-  const fmtTime = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const fmtDT = t => new Date(t).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
+  const toInput = t => { const p = bdParts(t); return `${p.y}-${pad(p.m + 1)}-${pad(p.d)}T${pad(p.h)}:${pad(p.mi)}`; };
+  const fmtTime = t => new Date(t).toLocaleTimeString('en-US', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+  const fmtDT = t => new Date(t).toLocaleString('en-US', { timeZone: TZ, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const fmtClock = t => new Date(t).toLocaleTimeString('en-US', { timeZone: TZ });
+  const sameDay = (a, b) => dayStart(a) === dayStart(b);
+  const fmtWhen = t => sameDay(t, now()) ? fmtTime(t) : fmtDT(t);              // time today, date+time otherwise
   const fmtRange = (a, b) => sameDay(a, b - 1) ? `${fmtDT(a)} → ${fmtTime(b)}` : `${fmtDT(a)} → ${fmtDT(b)}`;
   function dur(ms) {
     const m = Math.round(ms / 60000);
@@ -444,15 +456,15 @@
   }
 
   function periodRange() {
-    const p = $('period').value, n = new Date(), today = dayStart(n), t = now();
+    const p = $('period').value, t = now(), today = dayStart(t), bp = bdParts(t);
     if (p === 'today') return [today, t + 60000];
-    if (p === 'yesterday') return [dayStart(new Date(today - DAY / 2)), today];
-    if (p === '7d') return [dayStart(new Date(today - 6 * DAY + DAY / 2)), t + 60000];
-    if (p === 'month') return [new Date(n.getFullYear(), n.getMonth(), 1).getTime(), t + 60000];
-    if (p === '30d') return [dayStart(new Date(today - 29 * DAY + DAY / 2)), t + 60000];
+    if (p === 'yesterday') return [today - DAY, today];
+    if (p === '7d') return [today - 6 * DAY, t + 60000];
+    if (p === 'month') return [Date.UTC(bp.y, bp.m, 1) - TZ_OFF, t + 60000];
+    if (p === '30d') return [today - 29 * DAY, t + 60000];
     const f = $('dFrom').value, e = $('dTo').value;
     if (!f || !e) return null;
-    const from = new Date(f).getTime(), to = new Date(e).getTime();   // datetime-local = viewer's local time
+    const from = fromInput(f), to = fromInput(e);   // the boxes are in Bangladesh time
     return to > from ? [from, to] : null;
   }
 
@@ -466,7 +478,7 @@
     if (!earnRows.length || newBucket !== earnBucket) { earnLoading = true; renderEarnings(); }
     earnBucket = newBucket;
     try {
-      const q = `team=${encodeURIComponent(team)}&from=${range[0]}&to=${range[1]}&tz=${new Date().getTimezoneOffset()}&bucket=${earnBucket}`;
+      const q = `team=${encodeURIComponent(team)}&from=${range[0]}&to=${range[1]}&tz=${-TZ_OFF / 60000}&bucket=${earnBucket}`;
       const r = await fetch('/api/earnings?' + q, { headers: { 'X-Token': tokenFor(team) } });
       if (asked !== team || earnRange !== range) return;
       if (!r.ok) { earnErr = 'Could not load earnings'; earnRows = []; }
@@ -513,7 +525,7 @@
     // Bars: one per hour (ranges up to 2 days) or one per day
     let html = '';
     const size = earnBucket === 'day' ? DAY : HOUR;
-    const off = -new Date().getTimezoneOffset() * 60000;
+    const off = TZ_OFF;
     const bStart = t => Math.floor((t + off) / size) * size - off;
     if (end - from > (size === HOUR ? HOUR : 26 * HOUR)) {
       const list = [];
@@ -522,7 +534,7 @@
       html = list.map(b => {
         const c = byBucket.get(b) || 0, a = Math.max(b, from), z = Math.min(b + size, end);
         const label = size === DAY
-          ? new Date(b).toLocaleDateString([], { day: 'numeric', month: 'short', weekday: 'short' })
+          ? new Date(b).toLocaleDateString('en-US', { timeZone: TZ, day: 'numeric', month: 'short', weekday: 'short' })
           : `${fmtTime(a)}–${fmtTime(z)}`;
         return `<div class="day"><span>${label}</span><span class="bar"><i style="width:${(c / max * 100).toFixed(1)}%"></i></span><span class="amt">${money(c)}</span></div>`;
       }).join('');
@@ -590,9 +602,11 @@
     // Site gives only whole days (e.g. "9 days"), so the end date is approximate
     const roughWait = a.waitText && !/hour|min|sec|:/i.test(a.waitText);
     const footL = s === 'PAUSED' && a.waitUntil
-      ? `Back ${roughWait ? '≈ ' : 'at '}${new Date(a.waitUntil - serverSkew).toLocaleString([], roughWait ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+      ? `Back ${roughWait ? '≈ ' + new Date(a.waitUntil - serverSkew).toLocaleDateString('en-US', { timeZone: TZ, day: 'numeric', month: 'short' }) : 'at ' + fmtWhen(a.waitUntil - serverSkew)}`
       : s === 'BLOCKED' && a.unlockAt
-      ? `Unlocks at ${new Date(a.unlockAt - serverSkew).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+      ? `Unlocks at ${fmtWhen(a.unlockAt - serverSkew)}`
+      : s === 'READY' && a.unlockAt
+      ? `Unlocked at ${fmtWhen(a.unlockAt - serverSkew)}`
       : (a.rateLimitText ? `Limit ${esc(a.rateLimitText)}` : '');
     const footR = a.reported ? `<span data-seen="${a.lastSeen}">seen ${ago(now() - a.lastSeen)}</span>` : '';
     const del = team === 'ALL' && a.accountId ? ` · <a data-del="${esc(a.accountId)}" title="Remove this report">✕</a>` : '';
@@ -607,6 +621,7 @@
           <div class="sub">
             ${a.workerId ? `<span>Worker ID <b>${esc(a.workerId)}</b></span>` : ''}
             ${a.bpYear ? `<span>BP Year <b>${esc(a.bpYear)}</b></span>` : ''}
+            ${stale(a) && s !== 'OFFLINE' ? `<span class="soff" title="Chrome/script is not reporting. Times come from the last report.">● script off</span>` : ''}
           </div>
         </div>
         <span class="pill ${s}">${LABEL[s]}</span>
@@ -661,7 +676,7 @@
   // Every second: only update the countdowns and "seen … ago" text.
   // The whole page is rebuilt only when a status changes (e.g. blocked → unlocked).
   let lastSig = '';
-  const statusSig = () => team + '|' + accounts.map(statusOf).join(',');
+  const statusSig = () => team + '|' + accounts.map(a => statusOf(a) + (stale(a) ? '*' : '')).join(',');
   function tick() {
     if (!team || !tokenFor(team)) return;
     checkTransitions();
@@ -759,7 +774,7 @@
   const savedPeriod = ls.get('bpvm_period');
   $('period').value = [...$('period').options].some(o => o.value === savedPeriod) ? savedPeriod : 'today';
   const setCustom = (a, b) => { $('dFrom').value = toInput(a); $('dTo').value = toInput(b); };
-  if (!$('dFrom').value) setCustom(dayStart(new Date()), now());
+  if (!$('dFrom').value) setCustom(dayStart(now()), now());
   const reloadEarnings = () => { earnRows = []; loadEarnings(); };
   $('period').addEventListener('change', () => { ls.set('bpvm_period', $('period').value); reloadEarnings(); });
   $('dFrom').addEventListener('change', reloadEarnings);
