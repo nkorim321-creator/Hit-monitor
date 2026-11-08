@@ -72,6 +72,10 @@ if errorlevel 1 (
 schtasks /run /tn "BP Vote Monitor" >nul
 echo  Startup task created (no time limit, auto-restart) and server started.
 
+REM Watchdog: every 5 minutes (also after a reboot) check that the server answers, restart it if not
+powershell -NoProfile -Command "$a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -ExecutionPolicy Bypass -File ' + [char]34 + '%~dp0watchdog.ps1' + [char]34); $rep = (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(3) -RepetitionInterval (New-TimeSpan -Minutes 5)).Repetition; $t1 = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(3); $t1.Repetition = $rep; $t2 = New-ScheduledTaskTrigger -AtStartup; $t2.Delay = 'PT3M'; $t2.Repetition = $rep; $s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 3) -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable; Register-ScheduledTask -TaskName 'BP Vote Monitor Watchdog' -Action $a -Trigger @($t1, $t2) -Settings $s -User 'SYSTEM' -RunLevel Highest -Force | Out-Null"
+if errorlevel 1 (echo  [!] Could not create the watchdog task.) else (echo  Watchdog task created: checks the server every 5 minutes.)
+
 timeout /t 3 >nul
 echo.
 echo  ======================================================
@@ -79,6 +83,8 @@ echo   Done! Open the dashboard:  http://localhost:3100
 echo   From other PCs:            http://50.117.3.240   (or http://50.117.3.240:3100)
 echo   Passwords are in passwords.json (change with set-password.js)
 echo   Log file: %~dp0server.log
+echo   Watchdog log: %~dp0watchdog.log  (only written when it had to restart)
+echo   You do NOT need to run this file again. Only after updating the files.
 echo  ======================================================
 echo.
 start "" "http://localhost:3100"

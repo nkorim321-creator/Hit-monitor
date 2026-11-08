@@ -30,6 +30,12 @@ Server kono account e login kore na, tai proti account nijer browser/IP thekei c
 4. VPS company r panel e (Contabo/Vultr/AWS ityadi) firewall thakle sheikhane o **TCP 3100** open koro.
 5. Server bondho/remove korte: `uninstall-windows.bat` (Run as administrator).
 
+**Server nije nije chalu thake (bar bar install chalate hoy na):**
+- PC/VPS restart hole server nije chalu hoy.
+- Server bondho/crash hole 5 second por nije abar chalu hoy (`run-server.bat` loop).
+- **Watchdog** protiti 5 minute e check kore server uttor dicche kina; atke gele nije restart kore (`watchdog.log` e likhe rakhe).
+- `install-windows.bat` abar chalate hoy shudhu notun file update korar por.
+
 ### 1B. Linux VPS e setup
 
 ```bash

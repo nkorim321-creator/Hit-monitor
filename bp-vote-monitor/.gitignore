@@ -7,3 +7,4 @@ run-server.bat
 server.log
 earnings.json
 earnings.json.tmp
+watchdog.log
