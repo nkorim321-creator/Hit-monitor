@@ -212,7 +212,8 @@
       <div class="spacer"></div>
       <div class="etotal"><b id="earnTotal">—</b><div id="earnSub"></div></div>
     </div>
-    <div class="days" id="earnDays"></div>
+    <button class="dtoggle" id="barsToggle" hidden>▸ Show hourly breakdown</button>
+    <div class="days" id="earnDays" hidden></div>
     <button class="dtoggle" id="detToggle">▸ Show A–Z details per ID</button>
     <div class="dwrap" id="earnDetails" hidden></div>
     <div class="enote" id="earnNote"></div>
@@ -260,6 +261,7 @@
   let serialsOpen = ls.get('bpvm_serials') !== '0';
   let earnLoading = false, earnRows = [], earnSince = 0, earnApproxUntil = 0, earnRange = null, earnErr = '', earnBucket = 'hour';
   let detailsOpen = ls.get('bpvm_details') === '1';
+  let barsOpen = ls.get('bpvm_bars') === '1';     // hour/day breakdown is hidden until clicked
   const prevStatus = {};
 
   const $ = id => document.getElementById(id);
@@ -514,7 +516,7 @@
     $('customRange').hidden = !custom;
     if (earnLoading && !earnErr) { $('earnTotal').textContent = '…'; $('earnSub').textContent = 'Loading…'; return; }
     if (earnErr || !earnRange) {
-      $('earnTotal').textContent = '—'; $('earnSub').textContent = earnErr; $('earnDays').innerHTML = '';
+      $('earnTotal').textContent = '—'; $('earnSub').textContent = earnErr; $('earnDays').innerHTML = ''; $('barsToggle').hidden = true;
       $('earnDetails').innerHTML = ''; return;
     }
     const [from, to] = earnRange, end = Math.min(to, now());
@@ -548,7 +550,11 @@
         return `<div class="day"><span>${label}</span><span class="bar"><i style="width:${(c / max * 100).toFixed(1)}%"></i></span><span class="amt">${money(c)}</span></div>`;
       }).join('');
     }
-    $('earnDays').innerHTML = html;
+    // Hidden by default; one button shows / hides it
+    $('barsToggle').hidden = !html;
+    $('barsToggle').textContent = (barsOpen ? '▾ Hide ' : '▸ Show ') + (size === DAY ? 'daily' : 'hourly') + ' breakdown';
+    $('earnDays').hidden = !barsOpen || !html;
+    $('earnDays').innerHTML = barsOpen ? html : '';
 
     // A–Z table per ID
     $('detToggle').textContent = (detailsOpen ? '▾ Hide' : '▸ Show') + ' A–Z details per ID';
@@ -827,6 +833,7 @@
   const reloadEarnings = () => { earnRows = []; loadEarnings(); };
   $('period').addEventListener('change', () => { ls.set('bpvm_period', $('period').value); reloadEarnings(); });
   $('dFrom').addEventListener('change', reloadEarnings);
+  $('barsToggle').addEventListener('click', () => { barsOpen = !barsOpen; ls.set('bpvm_bars', barsOpen ? '1' : '0'); renderEarnings(); });
   $('detToggle').addEventListener('click', () => { detailsOpen = !detailsOpen; ls.set('bpvm_details', detailsOpen ? '1' : '0'); renderEarnings(); });
   $('dTo').addEventListener('change', reloadEarnings);
   setInterval(tick, 1000);
