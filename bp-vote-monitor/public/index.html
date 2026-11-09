@@ -33,12 +33,13 @@
   .team.active small { color: #c7d2fe; }
   .team.admin { border-style: dashed; }
 
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 12px; }
-  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+  .stats { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; cursor: pointer; min-width: 0; }
   .stat.static { cursor: default; }
   .stat.active { outline: 2px solid var(--blue); }
-  .stat .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .stat .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+  .stat .n { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .l { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 900px) { .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
   .serials { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
   .sgroup { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
@@ -161,10 +162,10 @@
     h1 { font-size: 16px; }
     .teams { gap: 6px; margin-top: 8px; }
     .team { padding: 6px 10px; font-size: 13px; }
-    .stats { grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+    .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
     .stat { padding: 6px 8px; }
-    .stat .n { font-size: 17px; }
-    .stat .l { font-size: 9px; letter-spacing: .3px; }
+    .stat .n { font-size: 16px; }
+    .stat .l { font-size: 8px; letter-spacing: .2px; white-space: normal; }
     .tools input { min-width: 0; flex-basis: 100%; }
   }
   @media (max-width: 480px) { header { position: static; } main { padding: 10px; } .grid { grid-template-columns: 1fr; } }
@@ -393,11 +394,12 @@
 
   /* ── rendering ────────────────────────────────────────── */
   function renderStats() {
-    const c = { ALL: accounts.length, RUNNING: 0, BLOCKED: 0, OFFLINE: 0 };
+    const c = { ALL: accounts.length, RUNNING: 0, BLOCKED: 0, OFFLINE: 0, REST: 0 };
     let bal = 0, votes = 0;
     for (const a of accounts) {
       const s = statusOf(a);
       if (isRun(s)) c.RUNNING++; else if (isStop(s)) c.BLOCKED++; else c.OFFLINE++;
+      if (restDone(a)) c.REST++;
       bal += a.totalBalanceCents || 0;
       if (s === 'RUNNING') votes += a.totalAvailable || 0;
     }
@@ -406,6 +408,7 @@
       ['RUNNING', c.RUNNING, 'Running / Unlocked', 'color:var(--green)'],
       ['BLOCKED', c.BLOCKED, 'Blocked / Paused', 'color:var(--red)'],
       ['OFFLINE', c.OFFLINE, 'Offline / No data', 'color:#94a3b8'],
+      ['REST', c.REST, 'Rest done (12h)', 'color:#2dd4bf'],
       [null, money(bal), 'Total balance', ''],
       [null, votes, 'Votes available', 'color:var(--blue)'],
     ];
@@ -662,6 +665,7 @@
       if (filter === 'RUNNING' && !isRun(s)) return false;
       if (filter === 'BLOCKED' && !isStop(s)) return false;
       if (filter === 'OFFLINE' && !isOff(s)) return false;
+      if (filter === 'REST' && !restDone(a)) return false;
       if (q && !`${a.mail} ${a.workerId} ${a.team} id-${a.serial} ${a.bpYear}`.toLowerCase().includes(q)) return false;
       return true;
     });
@@ -685,6 +689,8 @@
   /* ── Rest time: 12 hours counted from the moment the ID got unlocked ──
      0–3 h red, 3–8 h yellow, 8–12 h green; full green bar when 12 h are done. */
   const REST_MS = 12 * HOUR;
+  // 12 hours have passed since the ID was unlocked (its "Rest time" is done)
+  const restDone = a => { const st = restStart(a, statusOf(a)); return !!st && now() - st >= REST_MS; };
   const restStart = (a, s) =>
     s === 'READY' ? a.unlockAt :
     (['RUNNING', 'OFFLINE', 'UNKNOWN', 'LOGGED_OUT'].includes(s) && a.state !== 'BLOCKED') ? a.lastUnlockAt : null;
@@ -713,7 +719,7 @@
   }
 
   let lastSig = '';
-  const statusSig = () => team + '|' + accounts.map(a => statusOf(a) + (stale(a) ? '*' : '')).join(',');
+  const statusSig = () => team + '|' + accounts.map(a => statusOf(a) + (stale(a) ? '*' : '') + (restDone(a) ? 'R' : '')).join(',');
   function tick() {
     if (!team || !tokenFor(team)) return;
     checkTransitions();
