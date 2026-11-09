@@ -2,7 +2,7 @@
 // @name        BP Worker Vote Monitor (Multi-Account Reporter)
 // Works in Tampermonkey and Violentmonkey.
 // @namespace   https://www.bpworker.com/
-// @version     2.0
+// @version     2.1
 // @description Reads the bpworker.com /vote page (Running / Blocked, unlock time, balance, available votes) and reports it to your Vote Monitor server so all accounts show on one dashboard.
 // @match       https://www.bpworker.com/*
 // @match       https://bpworker.com/*
@@ -167,9 +167,16 @@
           data: payload ? JSON.stringify(payload) : undefined,
           timeout: 15000,
           onload: r => {
-            if (r.status >= 200 && r.status < 300) { let data = null; try { data = JSON.parse(r.responseText); } catch (e) {} return resolve({ ok: true, data }); }
-            const ours = /x-bp-vote-monitor/i.test(r.responseHeaders || '');
+            let data = null; try { data = JSON.parse(r.responseText); } catch (e) {}
+            // Only an answer from OUR server counts. Some proxies answer "200 OK" with their own page
+            // without passing the report on; that must not show "synced".
+            const ours = /x-bp-vote-monitor/i.test(r.responseHeaders || '') ||
+                         !!(data && (data.ok === true || Array.isArray(data.teams)));
             const body = String(r.responseText || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+            if (r.status >= 200 && r.status < 300) {
+              if (ours) return resolve({ ok: true, data });
+              return resolve({ ok: false, status: r.status, why: `HTTP ${r.status} answer came from a proxy/VPN/firewall, not from the Vote Monitor server — the report did not arrive${body ? ' — "' + body + '"' : ''}` });
+            }
             resolve({ ok: false, status: r.status, why: ours
               ? `server answered HTTP ${r.status}${body ? ': ' + body : ''}`
               : `HTTP ${r.status} from something between this browser and the server (proxy/VPN/firewall), not from the Vote Monitor server${body ? ' — "' + body + '"' : ''}` });
@@ -320,8 +327,11 @@
         if (sent.data && 'match' in sent.data && !m) {
           // Server got it, but this mail is not in the Google Sheet → it cannot show on a team
           setBadge('#f59e0b', `${icon} ${s.state}  ·  ⚠ not in sheet: ${email || 'mail not found on page'}  ·  synced ${new Date().toLocaleTimeString()}`);
+        } else if (m) {
+          setBadge(color, `${icon} ${s.state}  ·  ${m.team} ID-${m.serial}  ·  synced ${new Date().toLocaleTimeString()}`);
         } else {
-          setBadge(color, `${icon} ${s.state}  ·  ${m ? m.team + ' ID-' + m.serial + '  ·  ' : ''}synced ${new Date().toLocaleTimeString()}`);
+          // Older server: it does not say which sheet ID this is
+          setBadge(color, `${icon} ${s.state}  ·  synced ${new Date().toLocaleTimeString()}  ·  (server needs update for ID check)`);
         }
       } else {
         const allTimeout = sent.fails.every(f => /timeout/.test(f.why));
