@@ -49,6 +49,7 @@
   .chip.RUNNING, .chip.READY { border-color: rgba(34,197,94,.6); color: var(--green); }
   .chip.BLOCKED { border-color: rgba(239,68,68,.6); color: var(--red); }
   .chip.PAUSED { border-color: rgba(249,115,22,.6); color: var(--orange); }
+  .chip.REVIEW { border-color: rgba(167,139,250,.6); color: #a78bfa; }
   .chip.OFFLINE, .chip.LOGGED_OUT, .chip.UNKNOWN, .chip.NODATA { color: #94a3b8; }
   .chip.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
 
@@ -63,6 +64,7 @@
   .card.BLOCKED { border-left-color: var(--red); }
   .card.READY   { border-left-color: var(--blue); }
   .card.PAUSED  { border-left-color: var(--orange); }
+  .card.REVIEW  { border-left-color: #a78bfa; }
   .card.OFFLINE, .card.LOGGED_OUT, .card.UNKNOWN, .card.NODATA { opacity: .85; }
   .row1 { display: flex; align-items: flex-start; gap: 8px; }
   .idline { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
@@ -77,6 +79,7 @@
   .pill.BLOCKED { background: rgba(239,68,68,.15); color: var(--red); }
   .pill.READY   { background: rgba(56,189,248,.15); color: var(--blue); }
   .pill.PAUSED  { background: rgba(249,115,22,.15); color: var(--orange); }
+  .pill.REVIEW  { background: rgba(167,139,250,.15); color: #a78bfa; }
   .pill.OFFLINE, .pill.LOGGED_OUT, .pill.UNKNOWN, .pill.NODATA { background: rgba(100,116,139,.2); color: #94a3b8; }
   .big { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 0 6px; }
   .timer { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -292,12 +295,12 @@
     if (stale(a)) return 'OFFLINE';
     return a.state || 'UNKNOWN';
   }
-  const LABEL = { RUNNING: 'RUNNING', BLOCKED: 'BLOCKED', PAUSED: 'PAUSED', READY: 'UNLOCKED', OFFLINE: 'OFFLINE',
+  const LABEL = { RUNNING: 'RUNNING', BLOCKED: 'BLOCKED', PAUSED: 'PAUSED', REVIEW: 'IN REVIEW', READY: 'UNLOCKED', OFFLINE: 'OFFLINE',
                   LOGGED_OUT: 'LOGGED OUT', UNKNOWN: 'UNKNOWN', NODATA: 'NO DATA' };
-  const ORDER = { READY: 0, RUNNING: 1, BLOCKED: 2, PAUSED: 3, LOGGED_OUT: 4, UNKNOWN: 5, OFFLINE: 6, NODATA: 7 };
+  const ORDER = { READY: 0, RUNNING: 1, BLOCKED: 2, PAUSED: 3, REVIEW: 4, LOGGED_OUT: 5, UNKNOWN: 6, OFFLINE: 7, NODATA: 8 };
   const isStop = s => s === 'BLOCKED' || s === 'PAUSED';
   const isRun = s => s === 'RUNNING' || s === 'READY';
-  const isOff = s => ['OFFLINE', 'LOGGED_OUT', 'UNKNOWN', 'NODATA'].includes(s);
+  const isOff = s => ['OFFLINE', 'REVIEW', 'LOGGED_OUT', 'UNKNOWN', 'NODATA'].includes(s);
   const idLabel = a => a.unassigned ? 'Not in sheet' : `ID-${a.serial}`;
 
   /* ── team buttons ─────────────────────────────────────── */
@@ -409,7 +412,7 @@
       ['ALL', c.ALL, 'IDs', ''],
       ['RUNNING', c.RUNNING, 'Running / Unlocked', 'color:var(--green)'],
       ['BLOCKED', c.BLOCKED, 'Blocked / Paused', 'color:var(--red)'],
-      ['OFFLINE', c.OFFLINE, 'Offline / No data', 'color:#94a3b8'],
+      ['OFFLINE', c.OFFLINE, 'Offline / Review', 'color:#94a3b8'],
       ['REST', c.REST, 'Rest done (12h)', 'color:#2dd4bf'],
       [null, money(bal), 'Total balance', ''],
       [null, votes, 'Votes available', 'color:var(--blue)'],
@@ -606,6 +609,8 @@
     if (s === 'BLOCKED') timer = a.unlockAt ? `<div class="timer red" data-unlock="${a.unlockAt}">${hms(a.unlockAt - now())}</div>` : `<div class="timer red">Blocked</div>`;
     else if (s === 'PAUSED') timer = `<div><div class="timer orange">Paused${a.waitText ? ' · ' + esc(a.waitText) : ''}</div>` +
       (a.noticeText ? `<div class="notice">${esc(a.noticeText)} ${esc(a.waitText || '')}</div>` : '') + `</div>`;
+    else if (s === 'REVIEW') timer = `<div><div class="timer" style="color:#a78bfa;font-size:22px">In review</div>` +
+      (a.noticeText ? `<div class="notice">Site says: ${esc(a.noticeText)}</div>` : '') + `</div>`;
     else if (s === 'READY') timer = `<div class="timer green">Unlocked ✓</div>`;
     else if (s === 'RUNNING') timer = `<div class="timer green">${a.totalAvailable || 0} <span style="font-size:13px;color:var(--muted)">votes avail.</span></div>`;
     else if (s === 'OFFLINE') timer = `<div class="timer gray">No report ${ago(now() - a.lastSeen)}</div>`;
@@ -697,9 +702,9 @@
   const REST_MS = 12 * HOUR;
   // 12 hours have passed since the ID was unlocked (its "Rest time" is done)
   const restDone = a => { const st = restStart(a, statusOf(a)); return !!st && now() - st >= REST_MS; };
-  const restStart = (a, s) =>
-    s === 'READY' ? a.unlockAt :
-    (['RUNNING', 'OFFLINE', 'UNKNOWN', 'LOGGED_OUT'].includes(s) && a.state !== 'BLOCKED') ? a.lastUnlockAt : null;
+  // Shown only while the ID can work (UNLOCKED or RUNNING). Blocked, paused, in review or offline IDs
+  // are in their own boxes, so they get no rest bar and are not counted as "Rest done".
+  const restStart = (a, s) => s === 'READY' ? a.unlockAt : s === 'RUNNING' ? a.lastUnlockAt : null;
   // After 12 h: if the ID earned again (a vote was submitted) the rest is over → "Rest 12h done".
   // If it has not worked since, keep counting the rest time (12h 14m, 12h 15m …).
   function restView(start, lastEarnAt) {

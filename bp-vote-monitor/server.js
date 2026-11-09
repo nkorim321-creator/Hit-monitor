@@ -288,7 +288,7 @@ function view(scope, team) {
 /* ── reports from the account scripts ────────────────────── */
 const str = (v, max = 200) => (v == null ? '' : String(v).slice(0, max));
 const num = v => (v === null || v === undefined || v === '' || isNaN(Number(v)) ? null : Number(v));
-const STATES = ['RUNNING', 'BLOCKED', 'PAUSED', 'LOGGED_OUT', 'UNKNOWN'];
+const STATES = ['RUNNING', 'BLOCKED', 'PAUSED', 'REVIEW', 'LOGGED_OUT', 'UNKNOWN'];
 
 function handleReport(b) {
   const id = str(b.id, 120).trim();
@@ -332,7 +332,9 @@ function handleReport(b) {
   accounts[id] = acc;
   save();
   trackHistory(acc.email, state, acc.totalBalanceCents, acc.unlockAt, now);
-  return { ok: true };
+  // Tell the script which sheet ID this is, so its badge can show "SUJON ID-9" or "not in sheet"
+  const row = sheet.rows.find(r => norm(r.mail) === norm(acc.email));
+  return { ok: true, match: row ? { team: row.team, serial: row.serial } : null };
 }
 
 /* ── HTTP ────────────────────────────────────────────────── */
