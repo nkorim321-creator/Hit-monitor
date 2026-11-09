@@ -688,20 +688,25 @@
   const restStart = (a, s) =>
     s === 'READY' ? a.unlockAt :
     (['RUNNING', 'OFFLINE', 'UNKNOWN', 'LOGGED_OUT'].includes(s) && a.state !== 'BLOCKED') ? a.lastUnlockAt : null;
-  function restView(start) {
+  // After 12 h: if the ID earned again (a vote was submitted) the rest is over → "Rest 12h done".
+  // If it has not worked since, keep counting the rest time (12h 14m, 12h 15m …).
+  function restView(start, lastEarnAt) {
     const done = Math.max(0, now() - start), left = REST_MS - done, h = done / HOUR;
     const color = left <= 0 ? 'var(--green)' : h < 3 ? 'var(--red)' : h < 8 ? '#eab308' : 'var(--green)';
+    const workedAfter = left <= 0 && lastEarnAt && lastEarnAt >= start + REST_MS;
     return {
       pct: Math.min(100, done / REST_MS * 100).toFixed(2), color,
-      big: left > 0 ? hms(left) : 'Rest complete ✓',
-      sub: left > 0 ? `Rested ${dur(done)} of 12h · ready at ${fmtWhen(start + REST_MS - serverSkew)}` : `Rested ${dur(done)} (12h done)`,
+      big: left > 0 ? hms(left) : workedAfter ? 'Rest 12h done ✓' : 'Rest complete ✓',
+      sub: left > 0 ? `Rested ${dur(done)} of 12h · ready at ${fmtWhen(start + REST_MS - serverSkew)}`
+         : workedAfter ? `Rest 12h done · working again since ${fmtWhen(lastEarnAt - serverSkew)}`
+         : `Rested ${dur(done)} · no vote submitted yet`,
     };
   }
   function restHtml(a, s) {
     const start = restStart(a, s);
     if (!start) return '';
-    const v = restView(start);
-    return `<div class="rest" data-rest="${start}">
+    const v = restView(start, a.lastEarnAt);
+    return `<div class="rest" data-rest="${start}" data-earn="${a.lastEarnAt || ''}">
       <div class="rest-top"><span>Rest time</span><b class="rv" style="color:${v.color}">${v.big}</b></div>
       <div class="rbar"><i style="width:${v.pct}%;background:${v.color}"></i></div>
       <div class="rest-sub">${v.sub}</div></div>`;
@@ -715,7 +720,7 @@
     if (statusSig() !== lastSig) { render(); return; }
     for (const el of document.querySelectorAll('[data-unlock]')) el.textContent = hms(Number(el.dataset.unlock) - now());
     for (const el of document.querySelectorAll('[data-rest]')) {
-      const v = restView(Number(el.dataset.rest)), big = el.querySelector('.rv'), bar = el.querySelector('.rbar i');
+      const v = restView(Number(el.dataset.rest), Number(el.dataset.earn) || 0), big = el.querySelector('.rv'), bar = el.querySelector('.rbar i');
       big.textContent = v.big; big.style.color = v.color;
       bar.style.width = v.pct + '%'; bar.style.background = v.color;
       el.querySelector('.rest-sub').textContent = v.sub;

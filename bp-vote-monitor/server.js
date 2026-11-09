@@ -267,6 +267,9 @@ function view(scope, team) {
     const item = { key: row.team + '#' + row.serial + '#' + row.mail, team: row.team, serial: row.serial,
                    bpYear: row.bpYear, mail: row.mail, workerId: row.workerId, reported: !!a };
     if (a) { for (const f of PUBLIC_FIELDS) item[f] = a[f]; item.accountId = a.id; }
+    // Last time this ID earned (balance went up) — used to tell if it worked again after its 12 h rest
+    const ev = earn.ev[norm(row.mail)] || [];
+    for (let i = ev.length - 1; i >= 0; i--) if (ev[i][1] > 0) { item.lastEarnAt = ev[i][0]; break; }
     list.push(item);
   }
   // Admin "ALL" view also shows reporting accounts that are not in the sheet
