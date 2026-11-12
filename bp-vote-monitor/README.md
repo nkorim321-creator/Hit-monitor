@@ -82,6 +82,8 @@ Browser e `http://50.117.3.240` (ba `http://50.117.3.240:3100`) kholo. Server po
 - Card e: **ID-number, Mail, Worker ID, BP Year** (sheet theke), ar status, unlock countdown, balance.
 - **🔊 Voice alerts** on korle dashboard mukhe bole dey: kono ID **unlock** hole, **block** hole, ba 12 ghontar **rest shesh** hole
   team er nam ar ID number (jemon "Sujon, ID 9, unlocked"). Dashboard er tab khola rakhte hobe, ar page reload er por page e ekbar click korte hoy (browser er niyom).
+  Voice button er pashe **voice list** theke voice bachha jay, **▶ Test** e shona jay. Dashboard nije shobcheye manusher moto meye voice ney.
+  Ashol manusher moto voice (★ Natural: Ava, Jenny, Aria) shudhu **Microsoft Edge** e thake; Chrome e shobcheye bhalo "Google US English".
 - **💰 Earnings**: Today / Yesterday / Last 7 days / This month / Last 30 days / **Custom date & time** (jemon aj 2:00 AM → 5:00 AM).
   **▸ Show A–Z details** e protiti ID er oi shomoyer Earned, Collected, koto shomoy Blocked, kokhon block → unlock, Script koto % online chilo. Team er total, din onujayi bar, ar protiti ID card e oi shomoyer earning.
   Script er report e balance barle earning dhora hoy, exact shomoy shoho (script protiti 60 second e check kore). Collect/payout e balance komle earning theke bad jay na. Earning tracking shuru hoy server update er por theke, ager earning jana nai.

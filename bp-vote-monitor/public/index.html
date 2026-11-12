@@ -55,6 +55,8 @@
 
   .tools { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
   .tools input { flex: 1; min-width: 160px; }
+  #voiceSel { max-width: 250px; }
+  .vhint { font-size: 11px; color: var(--amber); margin-top: 6px; }
 
   main { padding: 16px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
@@ -197,8 +199,11 @@
         <option value="balance">Sort: balance</option>
       </select>
       <button id="notifyBtn" title="Says the team name and ID number out loud when an ID gets unlocked, gets blocked, or finishes its 12-hour rest">🔇 Voice alerts: off</button>
+      <select id="voiceSel" hidden title="Which voice reads the alerts"></select>
+      <button id="voiceTest" hidden title="Hear the selected voice">▶ Test</button>
       <button id="pwBtn" hidden title="Set team passwords">🔑 Passwords</button>
     </div>
+    <div class="vhint" id="voiceHint" hidden></div>
   </div>
 </header>
 <main>
@@ -774,15 +779,59 @@
     } catch (e) {}
   }
   function hold(text) { if (heldBack.length < 20) heldBack.push(text); pageClicked = false; paintNotify(); }
+  /* Which voice speaks. The browser decides which voices exist:
+       Microsoft Edge has "Online (Natural)" voices (Ava, Jenny, Aria …) that sound like a real person,
+       Chrome has "Google US English" (female, online), Windows itself only the robotic David / Zira.
+     By default the most human-sounding FEMALE English voice is used; the list lets the viewer pick another. */
+  const FEMALE = /\b(female|woman|ava|emma|jenny|aria|michelle|ana|sara|jane|nancy|amber|ashley|cora|elizabeth|monica|sonia|libby|maisie|mia|natasha|clara|neerja|emily|molly|zira|hazel|susan|heera|catherine|linda|samantha|victoria|karen|moira|tessa|fiona|allison|joanna|salli|kendra|kimberly|ivy)(multilingual)?\b/i;
+  const MALE = /\b(male|man|guy|davis|tony|jason|brandon|christopher|eric|jacob|roger|steffan|andrew|brian|ryan|thomas|william|liam|david|mark|george|james|richard|daniel|alex|fred|connor|mitchell|duncan|luke|wayne|elliot|alfie|oliver|noah|ethan|prabhat|ravi)(multilingual)?\b/i;
+  const BEST_FIRST = ['ava', 'emma', 'jenny', 'aria', 'michelle', 'sonia', 'libby'];
+  const isNatural = v => /natural|neural/i.test(v.name);
+  function voiceScore(v) {
+    const n = v.name;
+    let score = isNatural(v) ? 1000                               // sounds like a real person
+      : /^Google|premium|enhanced|siri/i.test(n) ? 300            // online / high-quality voices
+      : 0;                                                        // built-in robotic voices
+    const female = FEMALE.test(n) || /^Google US English/i.test(n);
+    score += female ? 500 : MALE.test(n) ? -500 : 0;
+    score += /^en[-_]US/i.test(v.lang) ? 50 : /^en[-_]GB/i.test(v.lang) ? 20 : 0;
+    const i = BEST_FIRST.findIndex(x => new RegExp('\\b' + x + '(multilingual)?\\b', 'i').test(n));
+    return score + (i < 0 ? 0 : 40 - i * 5);
+  }
+  // English voices of this browser, best first
+  function voiceList() {
+    if (!canSpeak) return [];
+    return speechSynthesis.getVoices().filter(v => /^en([-_]|$)/i.test(v.lang))
+      .map(v => [voiceScore(v), v]).sort((a, b) => b[0] - a[0]).map(x => x[1]);
+  }
+  // The voice picked in the list, or the best one when it is on "Auto" (or the picked one is not in this browser)
+  function chosenVoice() {
+    const list = voiceList(), want = ls.get('bpvm_voice') || '';
+    return list.find(v => v.name === want) || list[0] || null;
+  }
+  const shortVoice = v => (isNatural(v) ? '★ ' : '') + v.name.replace(/^Microsoft /, '').replace(/ - English \((.+)\)$/, ' · $1');
+  function paintVoice() {
+    const list = voiceList(), want = ls.get('bpvm_voice') || '', best = list[0];
+    const show = notifyOn && canSpeak;
+    $('voiceSel').hidden = !show || !list.length;
+    $('voiceTest').hidden = !show;
+    $('voiceSel').innerHTML = `<option value="">Auto: ${best ? esc(shortVoice(best)) : 'browser voice'}</option>` +
+      list.map(v => `<option value="${esc(v.name)}" ${v.name === want ? 'selected' : ''}>${esc(shortVoice(v))}</option>`).join('');
+    // No human-sounding voice in this browser → say where to get one
+    const hint = show && list.length && !list.some(isNatural);
+    $('voiceHint').hidden = !hint;
+    if (hint) $('voiceHint').textContent = 'This browser has no natural (human-like) voice. Open this dashboard in Microsoft Edge to get the "★ (Natural)" voices such as Ava, Jenny or Aria.';
+  }
+  if (canSpeak) speechSynthesis.addEventListener('voiceschanged', paintVoice);   // the voice list arrives a moment after the page
+
   function speak(text) {
     if (!canSpeak) return beep();
     if (!pageClicked) return hold(text);
     try {
       const u = new SpeechSynthesisUtterance(text);
-      const voices = speechSynthesis.getVoices();
-      const v = voices.find(x => /^en[-_]US/i.test(x.lang)) || voices.find(x => /^en/i.test(x.lang));
-      if (v) u.voice = v;
-      u.lang = 'en-US'; u.rate = 0.95;
+      const v = chosenVoice();
+      if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-US';
+      u.rate = v && isNatural(v) ? 1 : 0.95;
       u.onerror = e => { if (e.error === 'not-allowed') { refused = true; hold(text); } };   // browser wants a click first
       speechSynthesis.resume();             // Chrome sometimes leaves the queue paused
       speechSynthesis.speak(u);             // several announcements queue up and play one after another
@@ -890,7 +939,12 @@
   function paintNotify() {
     $('notifyBtn').textContent = !notifyOn ? '🔇 Voice alerts: off'
       : pageClicked ? '🔊 Voice alerts: on' : '🔊 Voice alerts: on · click the page once';
+    paintVoice();
   }
+  // What a real alert sounds like, with a team name from the list on screen
+  const sample = () => `${spokenName((accounts.find(a => a.team) || {}).team || 'Sujon')}, ID 9, unlocked`;
+  $('voiceSel').addEventListener('change', () => { ls.set('bpvm_voice', $('voiceSel').value); paintVoice(); speechSynthesis.cancel(); speak(sample()); });
+  $('voiceTest').addEventListener('click', () => { speechSynthesis.cancel(); speak(sample()); });
   $('notifyBtn').addEventListener('click', async () => {
     notifyOn = !notifyOn; ls.set('bpvm_notify', notifyOn ? '1' : '0'); paintNotify();
     if (!notifyOn) { heldBack.length = 0; if (canSpeak) speechSynthesis.cancel(); return; }
