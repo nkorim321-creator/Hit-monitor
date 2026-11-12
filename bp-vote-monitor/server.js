@@ -1,5 +1,5 @@
 // BP Worker Vote Monitor — central server (no npm packages needed)
-// Run:  node server.js        (PORT=3100 by default)
+// Run:  node server.js        (listens on ports 3100 and 80; change with PORTS=3100)
 //
 // - Account scripts POST their /vote status to /api/report (no password).
 // - The ID list (Serial, BP Year, Mail, Worker ID, Team name) comes from a Google Sheet.
@@ -96,12 +96,10 @@ function trackHistory(mail, state, bal, unlockAt, now) {
 // Everything about one mail between from and to. bucketStart(t) groups earnings for the chart.
 function historyFor(mail, from, to, bucketStart) {
   const k = String(mail || '').trim().toUpperCase();
-  const out = { earned: 0, collected: 0, earnEvents: 0, buckets: {}, blocks: [], blockedMs: 0, onlineMs: 0,
-                firstSeen: null, lastSeen: null, stateAtStart: null, approx: false };
-  for (const [t, d, approx] of earn.ev[k] || []) {
+  const out = { earned: 0, collected: 0, buckets: {}, blocks: [], blockedMs: 0, onlineMs: 0, firstSeen: null, lastSeen: null };
+  for (const [t, d] of earn.ev[k] || []) {
     if (t < from || t >= to) continue;
-    if (approx) out.approx = true;
-    if (d > 0) { out.earned += d; out.earnEvents++; const b = bucketStart(t); out.buckets[b] = (out.buckets[b] || 0) + d; }
+    if (d > 0) { out.earned += d; const b = bucketStart(t); out.buckets[b] = (out.buckets[b] || 0) + d; }
     else out.collected += -d;
   }
   for (const [a, b] of earn.on[k] || []) {
@@ -116,7 +114,6 @@ function historyFor(mail, from, to, bucketStart) {
   for (let i = 0; i < st.length; i++) {
     const [t, state, unlockAt] = st[i];
     const next = st[i + 1] ? st[i + 1][0] : Infinity;
-    if (t < from && next > from) out.stateAtStart = state;
     if (state !== 'BLOCKED') continue;
     // A block lasts until the unlock time the site gave, or until the next state change, whichever is first
     const end = Math.min(unlockAt || next, next);
@@ -191,6 +188,7 @@ function addFail(ip) {
   const f = fails.get(ip);
   if (!f || Date.now() - f.t > 10 * 60 * 1000) fails.set(ip, { n: 1, t: Date.now() });
   else f.n++;
+  if (fails.size > 1000) for (const [k, v] of fails) if (Date.now() - v.t > 10 * 60 * 1000) fails.delete(k);
 }
 
 /* ── Google Sheet ────────────────────────────────────────── */
@@ -249,8 +247,8 @@ refreshSheet();
 setInterval(refreshSheet, SHEET_REFRESH_MS);
 
 /* ── build the list a viewer may see ─────────────────────── */
-const PUBLIC_FIELDS = ['state', 'balanceCents', 'totalBalanceCents', 'rateLimitText', 'unlockAt', 'lastUnlockAt', 'noticeText', 'waitText', 'waitUntil',
-                       'categories', 'totalAvailable', 'lastSeen', 'stateSince'];
+const PUBLIC_FIELDS = ['state', 'totalBalanceCents', 'rateLimitText', 'unlockAt', 'lastUnlockAt', 'noticeText', 'waitText', 'waitUntil',
+                       'categories', 'totalAvailable', 'lastSeen'];
 function view(scope, team) {
   const byMail = new Map();
   for (const a of Object.values(accounts)) {
@@ -294,41 +292,32 @@ function handleReport(b) {
   const id = str(b.id, 120).trim();
   if (!id) throw new Error('missing id');
   const now  = Date.now();
-  const prev = accounts[id] || { id, firstSeen: now };
+  const prev = accounts[id] || {};
   let state = STATES.includes(b.state) ? b.state : 'UNKNOWN';
   const cats = Array.isArray(b.categories) ? b.categories : [];
   // Older scripts called any page without a rate limit "RUNNING", even a "Voting is paused" page.
   // A real running page always lists vote categories, so without them it is not trusted as running.
   if (state === 'RUNNING' && cats.length === 0) state = 'UNKNOWN';
-  const rateLimitSeconds = num(b.rateLimitSeconds);
+  const rateLimitSeconds = num(b.rateLimitSeconds), waitSeconds = num(b.waitSeconds);
   const acc = {
-    ...prev,
     id,
     email: str(b.email) || prev.email || '',
-    nickname: str(b.nickname, 60),
     state,
-    balanceCents: num(b.balanceCents),
     totalBalanceCents: num(b.totalBalanceCents),
-    rateLimitSeconds,
     rateLimitText: str(b.rateLimitText, 60),
     noticeText: str(b.noticeText, 200),
     waitText: str(b.waitText, 60),
-    waitUntil: state === 'PAUSED' && num(b.waitSeconds) ? now + num(b.waitSeconds) * 1000 : null,
+    waitUntil: state === 'PAUSED' && waitSeconds ? now + waitSeconds * 1000 : null,
     unlockAt: state === 'BLOCKED' && rateLimitSeconds ? now + rateLimitSeconds * 1000 : null,
-    categories: Array.isArray(b.categories)
-      ? b.categories.slice(0, 20).map(c => ({ name: str(c.name, 60), count: num(c.count) || 0, enabled: !!c.enabled }))
-      : [],
+    categories: cats.slice(0, 20).map(c => ({ name: str(c && c.name, 60), count: num(c && c.count) || 0 })),
     totalAvailable: num(b.totalAvailable) || 0,
     lastSeen: now,
+    // When a block ends, remember the unlock moment (for the 12-hour "Rest time" on the dashboard).
+    // Use the site's unlock time if it is known and already passed, otherwise the time we saw the change.
+    lastUnlockAt: prev.state === 'BLOCKED' && state !== 'BLOCKED'
+      ? (prev.unlockAt && prev.unlockAt <= now ? prev.unlockAt : now)
+      : (prev.lastUnlockAt || null),
   };
-  acc.stateSince = prev.state !== state ? now : (prev.stateSince || now);
-  // When a block ends, remember the unlock moment (for the 12-hour "Rest time" on the dashboard).
-  // Use the site's unlock time if it is known and already passed, otherwise the time we saw the change.
-  if (prev.state === 'BLOCKED' && state !== 'BLOCKED') {
-    acc.lastUnlockAt = prev.unlockAt && prev.unlockAt <= now ? prev.unlockAt : now;
-  } else {
-    acc.lastUnlockAt = prev.lastUnlockAt || null;
-  }
   accounts[id] = acc;
   save();
   trackHistory(acc.email, state, acc.totalBalanceCents, acc.unlockAt, now);
@@ -398,7 +387,7 @@ const server = async (req, res) => {
         const team = url.searchParams.get('team') || '';
         if (!mayOpen(scope, team)) return send(res, 401, { error: 'login required' });
         const extra = scope === 'ALL' ? { sheetError, passwordTeams: Object.keys(passwords) } : {};
-        return send(res, 200, { now: Date.now(), team, scope, ...extra, accounts: view(scope, team) });
+        return send(res, 200, { now: Date.now(), ...extra, accounts: view(scope, team) });
       }
 
       // Time-range report per ID (same login rules as /api/accounts).
@@ -412,8 +401,7 @@ const server = async (req, res) => {
         const size = url.searchParams.get('bucket') === 'day' ? 86400000 : 3600000;
         const bucketStart = t => Math.floor((t + off) / size) * size - off;
         const rows = view(scope, team).map(a => ({ key: a.key, mail: a.mail, ...historyFor(a.mail, from, to, bucketStart) }));
-        return send(res, 200, { from, to, now: Date.now(), trackingSince: earn.startedAt,
-                                approxUntil: earn.approxUntil || null, rows });
+        return send(res, 200, { from, to, trackingSince: earn.startedAt, approxUntil: earn.approxUntil || null, rows });
       }
 
       // Admin only: set a team's (or the admin "ALL") password
@@ -423,7 +411,7 @@ const server = async (req, res) => {
         const team = str(b.team, 80).trim(), pw = str(b.password, 200);
         if (!team) return send(res, 400, { error: 'team missing' });
         if (pw.length < 6) return send(res, 400, { error: 'Password must be at least 6 characters' });
-        setPassword(team === 'ALL' ? 'ALL' : team, pw);
+        setPassword(team, pw);
         // Changing the admin password logs the admin out; give back a fresh admin token
         return send(res, 200, { ok: true, token: team === 'ALL' ? makeToken('ALL') : undefined });
       }
@@ -459,7 +447,6 @@ process.on('uncaughtException', e => {
 });
 process.on('unhandledRejection', e => console.log(`[${new Date().toISOString()}] Unhandled: ${e && e.stack || e}`));
 
-let listening = 0;
 for (const port of PORTS) {
   const srv = http.createServer(server);
   srv.on('error', e => {
@@ -467,7 +454,6 @@ for (const port of PORTS) {
     console.log(`Port ${port} not available (${e.code || e.message}).`);
   });
   srv.listen(port, () => {
-    listening++;
     console.log(`[${new Date().toISOString()}] BP Vote Monitor running → http://localhost${port === 80 ? '' : ':' + port}`);
   });
 }

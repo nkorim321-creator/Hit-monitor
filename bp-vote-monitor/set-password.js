@@ -10,7 +10,9 @@ let data = {};
 try { data = JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch (e) {}
 const salt = crypto.randomBytes(16).toString('hex');
 const hash = crypto.scryptSync(pw, salt, 32).toString('hex');
-const key = team.trim().toUpperCase() === 'ALL' ? 'ALL' : team.trim();
+// Reuse the existing entry when only the capital letters differ ("sujon" vs "SUJON"), so a team never has two passwords
+const up = team.trim().toUpperCase();
+const key = up === 'ALL' ? 'ALL' : (Object.keys(data).find(k => k !== 'ALL' && k.trim().toUpperCase() === up) || team.trim());
 data[key] = { salt, hash };
 fs.writeFileSync(FILE, JSON.stringify(data, null, 2) + '\n');
 console.log(`Password set for "${key}".`);

@@ -4,16 +4,17 @@ bpworker.com `/vote` page theke proti account er status ek dashboard e dekhay:
 
 - 🟢 **RUNNING**: vote available, koyta vote ase (category wise)
 - 🔴 **BLOCKED**: rate limit, live countdown (kokhon unlock hobe)
-- 🔵 **UNLOCKED**: block time shesh, abar vote kora jabe
+- 🔵 **UNLOCKED**: block time shesh, abar vote kora jabe (shathe 12 ghontar **Rest time** bar)
+- 🟠 **PAUSED** / 🟣 **IN REVIEW**: site voting pause ba manual review e rekheche
 - ⚪ **OFFLINE / LOGGED OUT**: 3 min er beshi report nai, othoba login nai
 - 💰 Proti account er **Balance** + shob account er total balance
 
 ## Kivabe kaj kore
 
 ```
-[Account 1 browser + Tampermonkey script] ─┐
-[Account 2 browser + Tampermonkey script] ─┼──► server.js (port 3100) ──► Dashboard (http://SERVER:3100)
-[Account N browser + Tampermonkey script] ─┘
+[Account 1 browser + Violentmonkey/Tampermonkey script] ─┐
+[Account 2 browser + Violentmonkey/Tampermonkey script] ─┼──► server.js (port 80 + 3100) ──► Dashboard (http://SERVER)
+[Account N browser + Violentmonkey/Tampermonkey script] ─┘
 ```
 
 Proti account er browser e script ta protiti 60 second e `/vote` page read kore server e pathay.
@@ -25,9 +26,9 @@ Server kono account e login kore na, tai proti account nijer browser/IP thekei c
 
 1. Server e RDP diye dhuko. Edge diye https://nodejs.org theke **LTS** download kore install koro (shob option default rekhe Next, Next).
 2. GitHub theke ei branch er **ZIP** download koro, extract koro, `bp-vote-monitor` folder ta `C:\bp-vote-monitor` e rakho.
-3. `C:\bp-vote-monitor\install-windows.bat` e **right-click → Run as administrator**. Prothom bar **Admin password** chaibe (ALL ID er password). Dashboard er password dao (shudhu letter/number).
-   Eta port 3100 open kore, server chalu kore, ar reboot er por nije nije chalu hoy.
-4. VPS company r panel e (Contabo/Vultr/AWS ityadi) firewall thakle sheikhane o **TCP 3100** open koro.
+3. `C:\bp-vote-monitor\install-windows.bat` e **right-click → Run as administrator**. Prothom bar **Admin password** chaibe (ALL ID er password).
+   Eta port 80 ar 3100 open kore, server chalu kore, ar reboot er por nije nije chalu hoy.
+4. VPS company r panel e (Contabo/Vultr/AWS ityadi) firewall thakle sheikhane o **TCP 80** ar **3100** open koro.
 5. Server bondho/remove korte: `uninstall-windows.bat` (Run as administrator).
 
 **Server nije nije chalu thake (bar bar install chalate hoy na):**
@@ -43,10 +44,16 @@ cd bp-vote-monitor
 node server.js
 ```
 
-Optional, port / password set korte:
+Admin (ALL ID) password ekbar set koro:
 
 ```bash
-PORT=3100 SECRET=mypassword node server.js
+node set-password.js ALL "yourpassword"
+```
+
+Port 80 chara shudhu 3100 e chalate (Linux e port 80 er jonno root lage):
+
+```bash
+PORTS=3100 node server.js
 ```
 
 Shob shomoy chalu rakhte (pm2 thakle):
@@ -59,10 +66,10 @@ Firewall e port **80** ar **3100** open rakhte hobe.
 
 ### 2. Script install (proti account er browser e)
 
-1. Tampermonkey e `BP_Vote_Monitor.user.js` install koro.
-2. Server URL default `http://50.117.3.240:3100`. Onno hole Tampermonkey menu → **⚙ Set server URL**.
-4. Optional: menu → **✏ Set nickname for this account** (dashboard e ei naam dekhabe).
-5. `https://www.bpworker.com/vote` ekta tab e khola rakho. Niche dan kone choto badge e status dekhabe.
+1. Violentmonkey ba Tampermonkey e `BP_Vote_Monitor.user.js` install koro.
+2. Server URL nije nije thik hoy (`http://50.117.3.240`, na hole `:3100`). Onno server hole script menu → **⚙ Set server URL**.
+3. `https://www.bpworker.com/vote` ekta tab e khola rakho. Niche dan kone badge e status ar kon ID hishebe chena hocche dekhabe (jemon `SUJON ID-9 · synced`).
+4. Badge e ⚠ dekhale badge e click koro, karon ar ki korte hobe bole dibe.
 
 ### 3. Dashboard
 
@@ -73,7 +80,8 @@ Browser e `http://50.117.3.240` (ba `http://50.117.3.240:3100`) kholo. Server po
 - Protiti team shudhu nijer password diye khule, baki team lock e thake. Admin password shudhu **ALL ID** khule (sheikhane shob team er ID ekshathe).
 - **▾ IDs** button diye serial number gula lukano / dekhano jay. Serial number (1, 2, 3 ...) e click korle shudhu oi ID dekhay. Number er rong: sobuj = Running, lal = Blocked, dhushor = Offline/No data.
 - Card e: **ID-number, Mail, Worker ID, BP Year** (sheet theke), ar status, unlock countdown, balance.
-- **🔔 Alerts** on korle kono ID unblock hole sound + notification ashbe.
+- **🔊 Voice alerts** on korle dashboard mukhe bole dey: kono ID **unlock** hole, **block** hole, ba 12 ghontar **rest shesh** hole
+  team er nam ar ID number (jemon "Sujon, ID 9, unlocked"). Dashboard er tab khola rakhte hobe, ar page reload er por page e ekbar click korte hoy (browser er niyom).
 - **💰 Earnings**: Today / Yesterday / Last 7 days / This month / Last 30 days / **Custom date & time** (jemon aj 2:00 AM → 5:00 AM).
   **▸ Show A–Z details** e protiti ID er oi shomoyer Earned, Collected, koto shomoy Blocked, kokhon block → unlock, Script koto % online chilo. Team er total, din onujayi bar, ar protiti ID card e oi shomoyer earning.
   Script er report e balance barle earning dhora hoy, exact shomoy shoho (script protiti 60 second e check kore). Collect/payout e balance komle earning theke bad jay na. Earning tracking shuru hoy server update er por theke, ager earning jana nai.

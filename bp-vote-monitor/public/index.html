@@ -89,9 +89,12 @@
   .rbar { height: 10px; border-radius: 6px; background: var(--panel2); overflow: hidden; margin-top: 4px; border: 1px solid var(--line); }
   .rbar i { display: block; height: 100%; border-radius: 6px; transition: width .5s, background .5s; }
   .rest-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
-  .timer.red { color: var(--red); } .timer.orange { color: var(--orange); font-size: 22px; }
+  .timer.red { color: var(--red); }
+  .timer.green { color: var(--green); }
+  .timer.orange { color: var(--orange); font-size: 22px; }
+  .timer.gray { color: var(--muted); font-size: 15px; }
   .soff { color: var(--amber); font-weight: 600; }
-  .notice { font-size: 12px; color: var(--muted); margin-top: 4px; } .timer.green { color: var(--green); } .timer.gray { color: var(--muted); font-size: 15px; }
+  .notice { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .bal { text-align: right; }
   .bal b { font-size: 18px; }
   .bal div { font-size: 11px; color: var(--muted); }
@@ -105,7 +108,6 @@
 
   #login { position: fixed; inset: 0; z-index: 50; background: rgba(4,7,14,.97); display: flex;
            align-items: center; justify-content: center; padding: 16px; }
-  #login[hidden] { display: none; }
   #login form { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
                 padding: 28px 24px; width: 100%; max-width: 340px; text-align: center; }
   #login h2 { margin: 0 0 6px; font-size: 20px; }
@@ -116,7 +118,6 @@
   #loginErr { color: var(--red); font-size: 13px; min-height: 18px; margin-top: 8px; }
   #pwPanel { position: fixed; inset: 0; z-index: 40; background: rgba(4,7,14,.9); display: flex;
              align-items: center; justify-content: center; padding: 16px; }
-  #pwPanel[hidden] { display: none; }
   #pwPanel .box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px;
                   width: 100%; max-width: 460px; max-height: 90vh; overflow: auto; }
   #pwPanel h2 { margin: 0 0 4px; font-size: 18px; }
@@ -136,9 +137,8 @@
   .earn-top .et { font-weight: 700; font-size: 15px; }
   .earn-top input[type=datetime-local] { padding: 5px 8px; color-scheme: dark; }
   #customRange { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  #customRange label { font-size: 12px; color: var(--muted); }
+  #customRange label { font-size: 12px; color: var(--muted); min-width: 32px; }
   #customRange .dt { display: inline-flex; gap: 6px; align-items: center; }
-  #customRange label { min-width: 32px; }
   .etotal { text-align: right; }
   .etotal b { font-size: 22px; color: var(--green); font-variant-numeric: tabular-nums; }
   .etotal div { font-size: 11px; color: var(--muted); }
@@ -159,9 +159,12 @@
   .g { color: var(--green); } .r { color: var(--red); } .mu { color: var(--muted); }
   .earned { font-size: 12px; color: var(--green); margin-top: 2px; font-variant-numeric: tabular-nums; }
   .earned.zero { color: var(--muted); }
-  @media (max-width: 480px) { .etotal { text-align: left; width: 100%; } .day { grid-template-columns: 120px 1fr 56px; font-size: 11px; } }
   @media (max-width: 480px) {
-    header { padding: 10px; }
+    header { position: static; padding: 10px; }
+    main { padding: 10px; }
+    .grid { grid-template-columns: 1fr; }
+    .etotal { text-align: left; width: 100%; }
+    .day { grid-template-columns: 120px 1fr 56px; font-size: 11px; }
     h1 { font-size: 16px; }
     .teams { gap: 6px; margin-top: 8px; }
     .team { padding: 6px 10px; font-size: 13px; }
@@ -171,7 +174,6 @@
     .stat .l { font-size: 8px; letter-spacing: .2px; white-space: normal; }
     .tools input { min-width: 0; flex-basis: 100%; }
   }
-  @media (max-width: 480px) { header { position: static; } main { padding: 10px; } .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -194,7 +196,7 @@
         <option value="unlock">Sort: unlock soonest</option>
         <option value="balance">Sort: balance</option>
       </select>
-      <button id="notifyBtn" title="Alert me when an ID gets unblocked">🔕 Alerts: off</button>
+      <button id="notifyBtn" title="Says the team name and ID number out loud when an ID gets unlocked, gets blocked, or finishes its 12-hour rest">🔇 Voice alerts: off</button>
       <button id="pwBtn" hidden title="Set team passwords">🔑 Passwords</button>
     </div>
   </div>
@@ -265,7 +267,6 @@
   let earnLoading = false, earnRows = [], earnSince = 0, earnApproxUntil = 0, earnRange = null, earnErr = '', earnBucket = 'hour';
   let detailsOpen = ls.get('bpvm_details') === '1';
   let barsOpen = ls.get('bpvm_bars') === '1';     // hour/day breakdown is hidden until clicked
-  const prevStatus = {};
 
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -315,17 +316,17 @@
 
   function openTeam(name) {
     team = name; selected = null; filter = 'ALL'; accounts = [];
+    earnRows = []; earnRange = null;
     ls.set('bpvm_team', team);
     renderTeams(); render();
-    earnRows = []; earnRange = null;
     if (!tokenFor(team)) showLogin(); else { poll(); loadEarnings(); }
   }
 
   /* ── login box ────────────────────────────────────────── */
-  function showLogin(err) {
+  function showLogin() {
     $('loginTeam').textContent = team === 'ALL' ? 'ALL ID (Admin)' : team;
     $('loginUser').value = 'bp-vote-monitor ' + team;
-    $('loginErr').textContent = err || '';
+    $('loginErr').textContent = '';
     $('pw').value = '';
     $('login').hidden = false;
     $('pw').focus();
@@ -373,6 +374,7 @@
         if (!tokenFor(team)) showLogin();
         return;
       }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       const d = await r.json();
       serverSkew = d.now - Date.now();
       const fresh = d.accounts || [];
@@ -391,7 +393,7 @@
         return;
       }
     } catch (e) {
-      $('conn').textContent = '⚠ server not reachable';
+      $('conn').textContent = '⚠ server not reachable (showing the last data)';
       $('conn').className = 'conn err';
     }
     render();
@@ -498,9 +500,10 @@
       if (!r.ok) { earnErr = 'Could not load earnings'; earnRows = []; }
       else {
         const d = await r.json();
-        const same = !earnLoading && !earnErr && JSON.stringify(d.rows || []) === JSON.stringify(earnRows);
-        earnRows = d.rows || [];
-        if (same) return; earnSince = d.trackingSince || 0; earnApproxUntil = d.approxUntil || 0; earnErr = '';
+        const rows = d.rows || [];
+        // Nothing changed since the last load → leave the panel as it is
+        if (!earnLoading && !earnErr && JSON.stringify(rows) === JSON.stringify(earnRows)) return;
+        earnRows = rows; earnSince = d.trackingSince || 0; earnApproxUntil = d.approxUntil || 0; earnErr = '';
       }
     } catch (e) { earnErr = 'Server not reachable'; }
     earnLoading = false;
@@ -613,7 +616,7 @@
       (a.noticeText ? `<div class="notice">Site says: ${esc(a.noticeText)}</div>` : '') + `</div>`;
     else if (s === 'READY') timer = `<div class="timer green">Unlocked ✓</div>`;
     else if (s === 'RUNNING') timer = `<div class="timer green">${a.totalAvailable || 0} <span style="font-size:13px;color:var(--muted)">votes avail.</span></div>`;
-    else if (s === 'OFFLINE') timer = `<div class="timer gray">No report ${ago(now() - a.lastSeen)}</div>`;
+    else if (s === 'OFFLINE') timer = `<div class="timer gray" data-noreport="${a.lastSeen}">No report ${ago(now() - a.lastSeen)}</div>`;
     else if (s === 'NODATA') timer = `<div class="timer gray">Script not reporting yet</div>`;
     else timer = `<div><div class="timer gray">${LABEL[s]}</div>${a.noticeText ? `<div class="notice">Site says: ${esc(a.noticeText)} ${esc(a.waitText || '')}</div>` : ''}</div>`;
 
@@ -665,6 +668,7 @@
       $('empty').textContent = team ? 'Login to see this team.' : 'Choose a team above.';
       return;
     }
+    if (selected !== null && accounts.length && !accounts.some(a => a.key === selected)) selected = null;
     renderStats();
     renderSerials();
     renderEarnings();
@@ -695,16 +699,14 @@
     lastSig = statusSig();
   }
 
-  // Every second: only update the countdowns and "seen … ago" text.
-  // The whole page is rebuilt only when a status changes (e.g. blocked → unlocked).
   /* ── Rest time: 12 hours counted from the moment the ID got unlocked ──
      0–3 h red, 3–8 h yellow, 8–12 h green; full green bar when 12 h are done. */
   const REST_MS = 12 * HOUR;
-  // 12 hours have passed since the ID was unlocked (its "Rest time" is done)
-  const restDone = a => { const st = restStart(a, statusOf(a)); return !!st && now() - st >= REST_MS; };
   // Shown only while the ID can work (UNLOCKED or RUNNING). Blocked, paused, in review or offline IDs
   // are in their own boxes, so they get no rest bar and are not counted as "Rest done".
   const restStart = (a, s) => s === 'READY' ? a.unlockAt : s === 'RUNNING' ? a.lastUnlockAt : null;
+  // 12 hours have passed since the ID was unlocked (its "Rest time" is done)
+  const restDone = a => { const st = restStart(a, statusOf(a)); return !!st && now() - st >= REST_MS; };
   // After 12 h: if the ID earned again (a vote was submitted) the rest is over → "Rest 12h done".
   // If it has not worked since, keep counting the rest time (12h 14m, 12h 15m …).
   function restView(start, lastEarnAt) {
@@ -729,6 +731,8 @@
       <div class="rest-sub">${v.sub}</div></div>`;
   }
 
+  // Every second: only update the countdowns and "seen … ago" text.
+  // The whole page is rebuilt only when a status changes (e.g. blocked → unlocked).
   let lastSig = '';
   const statusSig = () => team + '|' + accounts.map(a => statusOf(a) + (stale(a) ? '*' : '') + (restDone(a) ? 'R' : '')).join(',');
   function tick() {
@@ -743,11 +747,25 @@
       el.querySelector('.rest-sub').textContent = v.sub;
     }
     for (const el of document.querySelectorAll('[data-seen]')) el.textContent = 'seen ' + ago(now() - Number(el.dataset.seen));
+    for (const el of document.querySelectorAll('[data-noreport]')) el.textContent = 'No report ' + ago(now() - Number(el.dataset.noreport));
   }
 
-  /* ── alerts when an ID becomes unblocked ──────────────── */
+  /* ── voice alerts ─────────────────────────────────────────
+     Says the team name and ID number out loud when an ID
+       • gets unlocked   → "Sujon, ID 9, unlocked"
+       • gets blocked    → "Sujon, ID 9, blocked"
+       • finishes its 12-hour rest → "Sujon, ID 9, rest done"
+     Only changes seen while this page is open are spoken (nothing is read out when the page loads). */
+  const canSpeak = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+  // Chrome lets a page talk only after it was clicked (or a key was pressed) once.
+  // After a reload Chrome often still counts the earlier click, a moment after the page starts.
+  const browserSaysClicked = () => !navigator.userActivation || navigator.userActivation.hasBeenActive;
+  let pageClicked = browserSaysClicked();
+  let refused = false;                      // the browser refused to speak: only a real click helps now
+  const heldBack = [];                      // announcements waiting for that click
+
   let audioCtx = null;
-  function beep() {
+  function beep() {                         // only for browsers that cannot speak
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       const o = audioCtx.createOscillator(), g = audioCtx.createGain();
@@ -755,15 +773,64 @@
       o.start(); o.stop(audioCtx.currentTime + .25);
     } catch (e) {}
   }
+  function hold(text) { if (heldBack.length < 20) heldBack.push(text); pageClicked = false; paintNotify(); }
+  function speak(text) {
+    if (!canSpeak) return beep();
+    if (!pageClicked) return hold(text);
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      const voices = speechSynthesis.getVoices();
+      const v = voices.find(x => /^en[-_]US/i.test(x.lang)) || voices.find(x => /^en/i.test(x.lang));
+      if (v) u.voice = v;
+      u.lang = 'en-US'; u.rate = 0.95;
+      u.onerror = e => { if (e.error === 'not-allowed') { refused = true; hold(text); } };   // browser wants a click first
+      speechSynthesis.resume();             // Chrome sometimes leaves the queue paused
+      speechSynthesis.speak(u);             // several announcements queue up and play one after another
+    } catch (e) {}
+  }
+  function voiceReady() {                   // say what was held back
+    if (pageClicked) return;
+    pageClicked = true; paintNotify();
+    heldBack.splice(0).forEach(speak);
+  }
+  const onRealClick = () => { refused = false; voiceReady(); };
+  addEventListener('pointerdown', onRealClick, true);
+  addEventListener('keydown', onRealClick, true);
+
+  // "NOUSHAD" in capitals is spelled letter by letter by some voices; "Noushad" is read as a word
+  const spokenName = t => String(t || '').replace(/[A-Za-z]+/g, w => w[0].toUpperCase() + w.slice(1).toLowerCase());
+
+  const prevStatus = {};                    // ID → status at the last check
+  const restSeen = {};                      // ID → { start, done } of its current 12-hour rest
+  const lastSaid = {};                      // ID + event → when it was announced (no repeats within a minute)
   function checkTransitions() {
+    if (!pageClicked && !refused && browserSaysClicked()) voiceReady();
+    const events = [];
     for (const a of accounts) {
       const s = statusOf(a), p = prevStatus[a.key];
-      if (notifyOn && p === 'BLOCKED' && isRun(s)) {
-        beep();
-        try { if (Notification.permission === 'granted') new Notification('ID unlocked', { body: `${a.team} ${idLabel(a)} · ${a.mail}` }); } catch (e) {}
-      }
       prevStatus[a.key] = s;
+      // Each rest is counted from one unlock moment. Remember it, so "rest done" is said once per rest
+      // and not again when the ID goes offline / to review and comes back.
+      const start = restStart(a, s), was = restSeen[a.key];
+      const done = !!start && now() - start >= REST_MS;
+      if (start) restSeen[a.key] = { start, done };
+      if (a.unassigned) continue;           // not in the sheet: no team name / ID number to say
+      if (p === 'BLOCKED' && isRun(s)) events.push([a, 'unlocked']);
+      else if (p && p !== 'BLOCKED' && s === 'BLOCKED') events.push([a, 'blocked']);
+      if (done && was && !was.done && Math.abs(was.start - start) < 60000) events.push([a, 'rest done']);
     }
+    if (!notifyOn) return;
+    const fresh = events.filter(([a, what]) => {
+      const k = a.key + '|' + what, t = Date.now();
+      if (lastSaid[k] && t - lastSaid[k] < 60000) return false;
+      lastSaid[k] = t; return true;
+    });
+    const MAX = 10;                         // e.g. after the PC wakes up: do not talk for minutes
+    for (const [a, what] of fresh.slice(0, MAX)) {
+      speak(`${spokenName(a.team)}, ID ${a.serial}, ${what}`);
+      try { if (Notification.permission === 'granted') new Notification(`${a.team} ID-${a.serial} ${what}`, { body: a.mail }); } catch (e) {}
+    }
+    if (fresh.length > MAX) speak(`and ${fresh.length - MAX} more changes`);
   }
 
   /* ── events ───────────────────────────────────────────── */
@@ -820,17 +887,34 @@
     } catch (err) { $('pwMsg').style.color = 'var(--red)'; $('pwMsg').textContent = 'Server not reachable'; }
   });
 
-  function paintNotify() { $('notifyBtn').textContent = notifyOn ? '🔔 Alerts: on' : '🔕 Alerts: off'; }
+  function paintNotify() {
+    $('notifyBtn').textContent = !notifyOn ? '🔇 Voice alerts: off'
+      : pageClicked ? '🔊 Voice alerts: on' : '🔊 Voice alerts: on · click the page once';
+  }
   $('notifyBtn').addEventListener('click', async () => {
     notifyOn = !notifyOn; ls.set('bpvm_notify', notifyOn ? '1' : '0'); paintNotify();
-    if (notifyOn) { beep(); try { if (Notification.permission === 'default') await Notification.requestPermission(); } catch (e) {} }
+    if (!notifyOn) { heldBack.length = 0; if (canSpeak) speechSynthesis.cancel(); return; }
+    speak('Voice alerts on');               // lets you hear that the sound works
+    try { if (Notification.permission === 'default') await Notification.requestPermission(); } catch (e) {}
   });
   paintNotify();
 
+  // A background tab's own timers are slowed down by the browser (down to once a minute).
+  // A worker's timer keeps its pace, so new data and voice alerts stay on time
+  // while the dashboard is not the tab in front.
+  function every(ms, fn) {
+    try {
+      const w = new Worker(URL.createObjectURL(new Blob([`setInterval(() => postMessage(0), ${ms})`], { type: 'text/javascript' })));
+      w.onmessage = () => fn();
+      w.onerror = () => { w.terminate(); setInterval(fn, ms); };
+    } catch (e) { setInterval(fn, ms); }
+  }
+
   loadTeams().then(() => { if (team) openTeam(team); else render(); });
   setInterval(loadTeams, 60000);
-  setInterval(poll, POLL_MS);
   setInterval(loadEarnings, 10000);
+  every(POLL_MS, poll);
+  every(1000, tick);
   const savedPeriod = ls.get('bpvm_period');
   $('period').value = [...$('period').options].some(o => o.value === savedPeriod) ? savedPeriod : 'today';
   const setCustom = (a, b) => { $('dFrom').value = toInput(a); $('dTo').value = toInput(b); };
@@ -841,7 +925,6 @@
   $('barsToggle').addEventListener('click', () => { barsOpen = !barsOpen; ls.set('bpvm_bars', barsOpen ? '1' : '0'); renderEarnings(); });
   $('detToggle').addEventListener('click', () => { detailsOpen = !detailsOpen; ls.set('bpvm_details', detailsOpen ? '1' : '0'); renderEarnings(); });
   $('dTo').addEventListener('change', reloadEarnings);
-  setInterval(tick, 1000);
 })();
 </script>
 </body>

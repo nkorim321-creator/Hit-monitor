@@ -2,7 +2,7 @@
 // @name        BP Worker Vote Monitor (Multi-Account Reporter)
 // Works in Tampermonkey and Violentmonkey.
 // @namespace   https://www.bpworker.com/
-// @version     2.1
+// @version     2.2
 // @description Reads the bpworker.com /vote page (Running / Blocked, unlock time, balance, available votes) and reports it to your Vote Monitor server so all accounts show on one dashboard.
 // @match       https://www.bpworker.com/*
 // @match       https://bpworker.com/*
@@ -21,11 +21,9 @@
   'use strict';
 
   /* ── CONFIG ─────────────────────────────────────────────
-     SERVER_URL / SECRET can also be changed from the Tampermonkey
-     menu ("⚙ Set server URL" / "🔑 Set secret key"), per browser. */
+     The server URL can also be changed per browser from the script menu ("⚙ Set server URL"). */
   const DEFAULT_SERVER_URL = 'http://50.117.3.240';            // port 80: passes through proxies
   const DEFAULT_SERVER_URLS = [DEFAULT_SERVER_URL, 'http://50.117.3.240:3100'];  // tried in this order
-  const DEFAULT_SECRET     = '';          // same as SECRET on the server (optional)
   const CHECK_EVERY_MS     = 60 * 1000;   // how often to re-read /vote
   const VOTE_URL           = location.origin + '/vote';
 
@@ -53,22 +51,11 @@
       const w = GM_getValue('workingUrl', '');
       return DEFAULT_SERVER_URLS.includes(w) ? [w, ...DEFAULT_SERVER_URLS.filter(u => u !== w)] : DEFAULT_SERVER_URLS;
     },
-    get server() { return this.servers[0]; },
-    get secret()   { return GM_getValue('secret', DEFAULT_SECRET) || ''; },
-    get nickname() { return GM_getValue('nickname', '') || ''; },
   };
 
-  GM_registerMenuCommand('✏ Set nickname for this account', () => {
-    const v = prompt('Nickname for this account (shown on dashboard):', cfg.nickname);
-    if (v !== null) { GM_setValue('nickname', v.trim()); checkNow(); }
-  });
   GM_registerMenuCommand('⚙ Set server URL', () => {
     const v = prompt('Vote Monitor server URL (leave blank = automatic: ' + DEFAULT_SERVER_URLS.join(' then ') + '):', GM_getValue('serverUrl', ''));
     if (v !== null) { GM_setValue('serverUrl', cleanUrl(v)); checkNow(); }
-  });
-  GM_registerMenuCommand('🔑 Set secret key', () => {
-    const v = prompt('Secret key (must match server SECRET, blank if none):', cfg.secret);
-    if (v !== null) { GM_setValue('secret', v.trim()); checkNow(); }
   });
   GM_registerMenuCommand('🔄 Check now', () => checkNow());
   GM_registerMenuCommand('🩺 Test server connection', () => testConnection());
@@ -77,8 +64,8 @@
   function parseVoteHtml(html) {
     const out = {
       workerKey: null, email: null, state: 'UNKNOWN',
-      balanceCents: null, totalBalanceCents: null, rateLimitSeconds: null,
-      rateLimitText: null, categories: [], totalAvailable: 0, payoutUnlockSeconds: null,
+      totalBalanceCents: null, rateLimitSeconds: null, rateLimitText: null,
+      categories: [], totalAvailable: 0,
       noticeText: null, waitText: null, waitSeconds: null,
     };
 
@@ -105,17 +92,14 @@
       return out;
     }
 
-    out.balanceCents      = model.balanceCents ?? null;
     out.totalBalanceCents = model.totalBalanceCents ?? model.balanceCents ?? null;
     out.rateLimitSeconds  = model.rateLimitSeconds ?? null;
-    out.payoutUnlockSeconds = model.tremendous ? (model.tremendous.unlockSeconds ?? null) : null;
 
     const doc = new DOMParser().parseFromString(html, 'text/html');
     doc.querySelectorAll('.category-row').forEach(row => {
       const name  = (row.querySelector('.category-label')?.textContent || '').trim();
       const count = parseInt((row.querySelector('.category-count')?.textContent || '').replace(/[^\d]/g, ''), 10) || 0;
-      const btn   = row.querySelector('.btn-vote');
-      out.categories.push({ name, count, enabled: !!btn && !btn.classList.contains('disabled') });
+      out.categories.push({ name, count });
       out.totalAvailable += count;
     });
 
@@ -163,7 +147,7 @@
       try {
         GM_xmlhttpRequest({
           method, url,
-          headers: { 'Content-Type': 'application/json', 'X-Key': cfg.secret },
+          headers: { 'Content-Type': 'application/json' },
           data: payload ? JSON.stringify(payload) : undefined,
           timeout: 15000,
           onload: r => {
@@ -254,9 +238,8 @@
      we reload the page ONE time (never twice within 2 minutes, so no reload loop). */
   const ON_VOTE_PAGE = /^\/vote\/?$/.test(location.pathname);
   const RELOAD_KEY = 'bpvm_lastAutoReload';
-  // Is the open page showing the "rate limit" / "paused" screen instead of the vote buttons?
-  const pageShowsWait = () => !document.querySelector('.category-row') &&
-    /rate limit|paused/i.test((document.querySelector('.notice') || {}).textContent || '');
+  // Is the open /vote page showing something else than the vote buttons (rate limit, paused, manual review …)?
+  const pageShowsWait = () => !document.querySelector('.category-row');
   function reloadOnce() {
     let last = 0;
     try { last = Number(sessionStorage.getItem(RELOAD_KEY)) || 0; } catch (e) {}
@@ -298,9 +281,7 @@
       const sent = await report({
         id,
         email,
-        nickname: cfg.nickname,
         state: s.state,
-        balanceCents: s.balanceCents,
         totalBalanceCents: s.totalBalanceCents,
         rateLimitSeconds: s.rateLimitSeconds,
         rateLimitText: s.rateLimitText,
@@ -309,8 +290,6 @@
         waitSeconds: s.waitSeconds,
         categories: s.categories,
         totalAvailable: s.totalAvailable,
-        payoutUnlockSeconds: s.payoutUnlockSeconds,
-        httpStatus: res.status,
       });
 
       // If blocked and the unlock is sooner than the next check, check right after unlock
