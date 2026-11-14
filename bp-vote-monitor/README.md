@@ -17,8 +17,11 @@ bpworker.com `/vote` page theke proti account er status ek dashboard e dekhay:
 [Account N browser + Violentmonkey/Tampermonkey script] ─┘
 ```
 
-Proti account er browser e script ta protiti 60 second e `/vote` page read kore server e pathay.
-Server kono account e login kore na, tai proti account nijer browser/IP thekei check hoy.
+Proti account er browser e script ta **khola `/vote` page ta pore** (DOM theke) ar status ta monitor server e pathay.
+Script bpworker.com e **nije kono request pathay na** (ager version protiti minute e `/vote` fetch korto, tai site "429 Too Many Requests" dito).
+Ekmatro page load ja script kore: rate limit shesh hole `/vote` page **ekbar** reload.
+Tai dashboard er vote ar balance holo oi page shesh je bar load hoyechilo tokhon er; card e "page read … ago" lekha thake.
+Server kono account e login kore na.
 
 ## Setup
 

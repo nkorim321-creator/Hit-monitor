@@ -2,8 +2,8 @@
 // @name        BP Worker Vote Monitor (Multi-Account Reporter)
 // Works in Tampermonkey and Violentmonkey.
 // @namespace   https://www.bpworker.com/
-// @version     2.2
-// @description Reads the bpworker.com /vote page (Running / Blocked, unlock time, balance, available votes) and reports it to your Vote Monitor server so all accounts show on one dashboard.
+// @version     3.0
+// @description Reads the bpworker.com /vote page that is open in the tab (Running / Blocked, unlock time, balance, available votes) and reports it to your Vote Monitor server. Sends no requests of its own to bpworker.com.
 // @match       https://www.bpworker.com/*
 // @match       https://bpworker.com/*
 // @grant       GM_xmlhttpRequest
@@ -24,8 +24,8 @@
      The server URL can also be changed per browser from the script menu ("⚙ Set server URL"). */
   const DEFAULT_SERVER_URL = 'http://50.117.3.240';            // port 80: passes through proxies
   const DEFAULT_SERVER_URLS = [DEFAULT_SERVER_URL, 'http://50.117.3.240:3100'];  // tried in this order
-  const CHECK_EVERY_MS     = 60 * 1000;   // how often to re-read /vote
-  const VOTE_URL           = location.origin + '/vote';
+  const LOOK_EVERY_MS      = 15 * 1000;   // how often the open page is looked at (reading it costs no request)
+  const SEND_EVERY_MS      = 60 * 1000;   // how often the status goes to the Vote Monitor server when nothing changed
 
   const OLD_SERVER_HOSTS   = ['38.58.179.188'];   // old servers: a saved URL pointing here is replaced
 
@@ -55,12 +55,12 @@
 
   GM_registerMenuCommand('⚙ Set server URL', () => {
     const v = prompt('Vote Monitor server URL (leave blank = automatic: ' + DEFAULT_SERVER_URLS.join(' then ') + '):', GM_getValue('serverUrl', ''));
-    if (v !== null) { GM_setValue('serverUrl', cleanUrl(v)); checkNow(); }
+    if (v !== null) { GM_setValue('serverUrl', cleanUrl(v)); look(true); }
   });
-  GM_registerMenuCommand('🔄 Check now', () => checkNow());
+  GM_registerMenuCommand('🔄 Send status now', () => look(true));
   GM_registerMenuCommand('🩺 Test server connection', () => testConnection());
 
-  /* ── PARSER: turns /vote HTML into a status object ───── */
+  /* ── PARSER: turns the /vote page (as HTML text) into a status object ───── */
   function parseVoteHtml(html) {
     const out = {
       workerKey: null, email: null, state: 'UNKNOWN',
@@ -86,16 +86,23 @@
       if (all.length) out.email = all[0];
     }
 
+    const doc = new DOMParser().parseFromString(html, 'text/html');
     if (!model) {
-      // No dashboard model → most likely logged out / redirected to login
-      out.state = /login|sign in|password/i.test(html) ? 'LOGGED_OUT' : 'UNKNOWN';
+      // No dashboard data on the page → a login page (it has a password box), or an error page (e.g. "Too Many Requests")
+      out.state = doc.querySelector('input[type="password"]') ? 'LOGGED_OUT' : 'UNKNOWN';
+      if (out.state === 'UNKNOWN') {
+        doc.querySelectorAll('script, style').forEach(n => n.remove());
+        out.noticeText = (doc.body ? doc.body.innerHTML : '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) || null;
+      }
       return out;
     }
 
-    out.totalBalanceCents = model.totalBalanceCents ?? model.balanceCents ?? null;
-    out.rateLimitSeconds  = model.rateLimitSeconds ?? null;
+    // Balance: the number the page shows now; before the page has filled it in, the number it was sent with
+    const shown = (doc.querySelector('.payout-balance b')?.textContent || '').match(/([\d,]+(?:\.\d+)?)/);
+    out.totalBalanceCents = shown ? Math.round(parseFloat(shown[1].replace(/,/g, '')) * 100)
+                                  : (model.totalBalanceCents ?? model.balanceCents ?? null);
+    out.rateLimitSeconds  = model.rateLimitSeconds ?? null;   // seconds left when the page was made
 
-    const doc = new DOMParser().parseFromString(html, 'text/html');
     doc.querySelectorAll('.category-row').forEach(row => {
       const name  = (row.querySelector('.category-label')?.textContent || '').trim();
       const count = parseInt((row.querySelector('.category-count')?.textContent || '').replace(/[^\d]/g, ''), 10) || 0;
@@ -113,13 +120,15 @@
       // Message written some other way (e.g. "A few of your past submissions require manual review…")
       const card = doc.querySelector('.dashboard-card') || doc.body;
       const c = card.cloneNode(true);
-      c.querySelectorAll('h1, .payout-section, .contact-link, [style*="display:none"], script').forEach(n => n.remove());
+      c.querySelectorAll('h1, .payout-section, .contact-link, .colorbox-content, script, style').forEach(n => n.remove());
+      c.querySelectorAll('[style]').forEach(n => { if (n.style.display === 'none') n.remove(); });   // the hidden pop-up texts
       const t = c.textContent.replace(/\s+/g, ' ').trim();
       if (t) out.noticeText = t.slice(0, 200);
     }
     const nt = doc.querySelector('.notice-timer');
-    const ntText = nt ? nt.textContent.replace(/\s+/g, ' ').trim() : '';   // empty for the live rate-limit countdown
-    if (ntText) { out.waitText = ntText.slice(0, 60); out.waitSeconds = parseWait(ntText); }
+    const ntText = nt ? nt.textContent.replace(/\s+/g, ' ').trim() : '';
+    // For a rate limit this is the ticking countdown; the unlock time is worked out from rateLimitSeconds instead
+    if (ntText && !(out.rateLimitSeconds > 0)) { out.waitText = ntText.slice(0, 60); out.waitSeconds = parseWait(ntText); }
 
     if (out.rateLimitSeconds && out.rateLimitSeconds > 0) out.state = 'BLOCKED';
     else if (out.noticeText && /paused|suspend|disabled|banned/i.test(out.noticeText)) out.state = 'PAUSED';
@@ -191,7 +200,7 @@
     const r = await send('GET', '/api/teams');
     if (r.ok) {
       alert('✅ Server connection OK\n\n' + usedUrl + '\n\nThis account can report to the dashboard.');
-      checkNow();
+      look(true);
       return;
     }
     const proxy = /proxy\/VPN\/firewall/.test(r.why);
@@ -211,10 +220,12 @@
   }
 
   /* ── BADGE ───────────────────────────────────────────── */
+  const BADGE_ID = 'bpvm-badge';
   let badge = null;
   function setBadge(color, text) {
     if (!badge) {
       badge = document.createElement('div');
+      badge.id = BADGE_ID;
       Object.assign(badge.style, {
         position: 'fixed', bottom: '14px', right: '64px', zIndex: 2147483640,
         background: '#0b1220', color: '#cbd5e1', border: '1px solid #1e3a5f',
@@ -229,103 +240,149 @@
     badge.textContent = text;
   }
 
-  /* ── MAIN LOOP ───────────────────────────────────────── */
-  let timer = null, busy = false;
-
-  /* ── AUTO RELOAD when the block ends ─────────────────────
-     The open /vote page does not refresh by itself: its timer stops at 0:00.
-     When the timer hits 0:00 we check right away; if voting is open again
-     we reload the page ONE time (never twice within 2 minutes, so no reload loop). */
+  /* ── READING THE OPEN PAGE ────────────────────────────────
+     The script asks bpworker.com for nothing. It only reads the page that is already open in this tab
+     (what you see yourself), so it adds no traffic to the site. Earlier versions fetched /vote every
+     minute and on every page load; the site answered that with "429 Too Many Requests".
+     The single page load the script can cause: ONE reload of /vote when a rate limit has ended. */
   const ON_VOTE_PAGE = /^\/vote\/?$/.test(location.pathname);
-  const RELOAD_KEY = 'bpvm_lastAutoReload';
-  // Is the open /vote page showing something else than the vote buttons (rate limit, paused, manual review …)?
-  const pageShowsWait = () => !document.querySelector('.category-row');
+  const navEntry = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || null;
+  // When the site made this page: its numbers (seconds left, balance, votes) were true at that moment
+  const PAGE_AT = Math.round((performance.timeOrigin || (Date.now() - performance.now())) + (navEntry ? navEntry.responseStart : 0));
+
+  let lastSig = null, dataAt = PAGE_AT;
+  function readVotePage() {
+    const page = document.documentElement.cloneNode(true);
+    page.querySelector('#' + BADGE_ID)?.remove();             // our own badge is not part of the site's page
+    const s = parseVoteHtml(page.outerHTML);
+    if (s.state === 'BLOCKED') {
+      // The unlock moment is fixed: page time + the seconds the site gave. It does not depend on any timer.
+      s.unlockAt = PAGE_AT + s.rateLimitSeconds * 1000;
+      s.rateLimitSeconds = Math.round((s.unlockAt - Date.now()) / 1000) || -1;   // below 0 once the limit is over
+    }
+    const sig = JSON.stringify([s.state, s.totalBalanceCents, s.categories, s.unlockAt || 0, s.noticeText, s.waitText, s.rateLimitText]);
+    s.changed = sig !== lastSig;
+    if (lastSig !== null && s.changed) dataAt = Date.now();   // the page changed by itself while it was open
+    lastSig = sig;
+    return s;
+  }
+  // The account key the site writes into its pages
+  const pageKey = () => (document.documentElement.innerHTML.match(/bp_push_worker\s*=\s*"([^"]+)"/) || [])[1] || '';
+  const isLoginPage = () => !!document.querySelector('input[type="password"]');
+
+  /* ── ONE RELOAD when the rate limit ends ──────────────────
+     The open /vote page does not refresh by itself (its timer stops at 0:00). When the unlock time has
+     passed, the page is reloaded once so the vote buttons show and the dashboard gets fresh numbers.
+     Never more often than every 2 minutes and at most 3 times an hour, so it cannot loop. */
+  const RELOAD_KEY = 'bpvm_autoReloads';
   function reloadOnce() {
-    let last = 0;
-    try { last = Number(sessionStorage.getItem(RELOAD_KEY)) || 0; } catch (e) {}
-    if (Date.now() - last < 2 * 60 * 1000) return false;
-    try { sessionStorage.setItem(RELOAD_KEY, String(Date.now())); } catch (e) {}
-    setBadge('#22c55e', '🟢 Voting open again · reloading page…');
+    let times = [];
+    try { times = JSON.parse(sessionStorage.getItem(RELOAD_KEY) || '[]'); } catch (e) {}
+    const now = Date.now();
+    times = (Array.isArray(times) ? times : []).filter(t => now - t < 60 * 60 * 1000);
+    if (times.length >= 3 || (times.length && now - times[times.length - 1] < 2 * 60 * 1000)) return false;
+    times.push(now);
+    try { sessionStorage.setItem(RELOAD_KEY, JSON.stringify(times)); } catch (e) {}
+    setBadge('#22c55e', '🟢 Rate limit is over · reloading the page once…');
     setTimeout(() => location.reload(), 800);
     return true;
   }
-  if (ON_VOTE_PAGE) {
-    let zeroSeen = false;
-    setInterval(() => {
-      if (!pageShowsWait()) { zeroSeen = false; return; }
-      const t = ((document.querySelector('.notice-timer') || {}).textContent || '').trim();
-      const atZero = /^0*:?0*:?00$/.test(t) && !/[1-9]/.test(t);       // "0:00", "00:00", "0:00:00"
-      if (atZero && !zeroSeen) { zeroSeen = true; setTimeout(checkNow, 2000); }
-      if (!atZero) zeroSeen = false;
-    }, 1000);
+
+  /* ── SENDING TO THE VOTE MONITOR SERVER ─────────────────── */
+  const clock = () => new Date().toLocaleTimeString();
+  const idText = m => (m ? `${m.team} ID-${m.serial}  ·  ` : '');
+  function showSendError(prefix, sent) {
+    const allTimeout = sent.fails.every(f => /timeout/.test(f.why));
+    const short = allTimeout ? 'server not answering (is the server PC on and running?)'
+      : sent.fails.map(f => /proxy\/VPN\/firewall/.test(f.why) ? `HTTP ${f.status} from proxy/VPN` : f.why.slice(0, 50)).join(' / ');
+    setBadge('#f59e0b', `${prefix}  ·  ⚠ not sent: ${short}  (click for details)`);
   }
 
-  async function checkNow() {
+  // Status read from the open /vote page
+  async function sendStatus(s) {
+    // Remember the account key so "logged out" can still be reported later
+    if (s.workerKey) GM_setValue('lastWorkerKey', s.workerKey);
+    // Mail is remembered per account key, so one account never borrows another account's mail
+    if (s.workerKey && s.email) GM_setValue('mail_' + s.workerKey, s.email);
+    const id = s.workerKey || GM_getValue('lastWorkerKey', '');
+    if (!id) { setBadge('#fbbf24', '⚠ Vote Monitor: account not detected'); return false; }
+    const email = s.email || GM_getValue('mail_' + id, '');
+
+    const sent = await report({
+      id, email,
+      state: s.state,
+      totalBalanceCents: s.totalBalanceCents,
+      rateLimitSeconds: s.rateLimitSeconds,
+      rateLimitText: s.rateLimitText,
+      noticeText: s.noticeText,
+      waitText: s.waitText,
+      waitSeconds: s.waitSeconds,
+      categories: s.categories,
+      totalAvailable: s.totalAvailable,
+      // how old these numbers are: since the page was loaded, or since it last changed by itself
+      dataAgeSeconds: Math.max(0, Math.round((Date.now() - dataAt) / 1000)),
+    });
+
+    const icon  = { RUNNING: '🟢', BLOCKED: '🔴', PAUSED: '🟠', REVIEW: '🟣', LOGGED_OUT: '⚪' }[s.state] || '🟡';
+    const color = { RUNNING: '#22c55e', BLOCKED: '#ef4444', PAUSED: '#f97316', REVIEW: '#a78bfa' }[s.state] || '#fbbf24';
+    if (!sent.ok) { showSendError(`${icon} ${s.state}`, sent); return false; }
+    const d = sent.data || {};
+    if (d.v) GM_setValue('serverV', d.v);
+    if ('match' in d && !d.match) {
+      // Server got it, but this mail is not in the Google Sheet → it cannot show on a team
+      setBadge('#f59e0b', `${icon} ${s.state}  ·  ⚠ not in sheet: ${email || 'mail not found on page'}  ·  synced ${clock()}`);
+    } else if (d.match) {
+      setBadge(color, `${icon} ${s.state}  ·  ${idText(d.match)}synced ${clock()}`);
+    } else {
+      setBadge(color, `${icon} ${s.state}  ·  synced ${clock()}  ·  (server needs update for ID check)`);   // older server
+    }
+    return true;
+  }
+
+  // On other bpworker pages (while voting, settings …) the status cannot be read.
+  // Only "this account's browser is open" is sent, so the ID does not look offline while you vote.
+  async function sendAlive() {
+    const key = pageKey();
+    if (key) GM_setValue('lastWorkerKey', key);
+    const id = key || GM_getValue('lastWorkerKey', '');
+    if (!id) { setBadge('#fbbf24', '⚠ Vote Monitor: open the /vote page once'); return false; }
+    if (!key && isLoginPage()) {
+      const sent = await report({ id, email: GM_getValue('mail_' + id, ''), state: 'LOGGED_OUT' });
+      if (!sent.ok) { showSendError('⚪ LOGGED_OUT', sent); return false; }
+      setBadge('#fbbf24', `⚪ LOGGED_OUT  ·  ${idText(sent.data && sent.data.match)}synced ${clock()}`);
+      return true;
+    }
+    // Servers before version 3 would take this for a full status, so it is only sent to newer ones
+    if (!(GM_getValue('serverV', 0) >= 3)) { setBadge('#64748b', 'Vote Monitor  ·  status is read on the /vote page'); return true; }
+    const sent = await report({ id, heartbeat: true });
+    if (!sent.ok) { showSendError('Vote Monitor', sent); return false; }
+    const d = sent.data || {};
+    setBadge('#22c55e', d.unknown ? 'Vote Monitor  ·  open the /vote page once so this ID is known'
+                                  : `🟢 Vote Monitor  ·  ${idText(d.match)}online ${clock()}`);
+    return true;
+  }
+
+  /* ── MAIN LOOP ───────────────────────────────────────── */
+  let busy = false, lastSentAt = 0, lastOk = true;
+  async function look(force) {
     if (busy) return;
     busy = true;
-    clearTimeout(timer);
-    let nextMs = CHECK_EVERY_MS;
     try {
-      const res  = await fetch(VOTE_URL + '?_=' + Date.now(), { credentials: 'include', cache: 'no-store' });
-      const html = await res.text();
-      const s    = parseVoteHtml(html);
-
-      // Remember the account key so we can still report "logged out" later
-      if (s.workerKey) GM_setValue('lastWorkerKey', s.workerKey);
-      // Mail is remembered per account key, so one account never borrows another account's mail
-      if (s.workerKey && s.email) GM_setValue('mail_' + s.workerKey, s.email);
-      const id = s.workerKey || GM_getValue('lastWorkerKey', '');
-      if (!id) { setBadge('#fbbf24', '⚠ Vote Monitor: account not detected'); return; }
-      const email = s.email || GM_getValue('mail_' + id, '');
-
-      const sent = await report({
-        id,
-        email,
-        state: s.state,
-        totalBalanceCents: s.totalBalanceCents,
-        rateLimitSeconds: s.rateLimitSeconds,
-        rateLimitText: s.rateLimitText,
-        noticeText: s.noticeText,
-        waitText: s.waitText,
-        waitSeconds: s.waitSeconds,
-        categories: s.categories,
-        totalAvailable: s.totalAvailable,
-      });
-
-      // If blocked and the unlock is sooner than the next check, check right after unlock
-      if (s.state === 'BLOCKED' && s.rateLimitSeconds > 0) {
-        nextMs = Math.min(nextMs, s.rateLimitSeconds * 1000 + 5000);
-      }
-
-      const icon  = { RUNNING: '🟢', BLOCKED: '🔴', PAUSED: '🟠', REVIEW: '🟣', LOGGED_OUT: '⚪' }[s.state] || '🟡';
-      const color = { RUNNING: '#22c55e', BLOCKED: '#ef4444', PAUSED: '#f97316', REVIEW: '#a78bfa' }[s.state] || '#fbbf24';
-      // The open page still shows the wait screen, but voting is open now → reload it once
-      if (ON_VOTE_PAGE && s.state === 'RUNNING' && pageShowsWait() && reloadOnce()) return;
-      if (sent.ok) {
-        const m = sent.data && sent.data.match;
-        if (sent.data && 'match' in sent.data && !m) {
-          // Server got it, but this mail is not in the Google Sheet → it cannot show on a team
-          setBadge('#f59e0b', `${icon} ${s.state}  ·  ⚠ not in sheet: ${email || 'mail not found on page'}  ·  synced ${new Date().toLocaleTimeString()}`);
-        } else if (m) {
-          setBadge(color, `${icon} ${s.state}  ·  ${m.team} ID-${m.serial}  ·  synced ${new Date().toLocaleTimeString()}`);
-        } else {
-          // Older server: it does not say which sheet ID this is
-          setBadge(color, `${icon} ${s.state}  ·  synced ${new Date().toLocaleTimeString()}  ·  (server needs update for ID check)`);
-        }
-      } else {
-        const allTimeout = sent.fails.every(f => /timeout/.test(f.why));
-        const short = allTimeout ? 'server not answering (is the server PC on and running?)'
-          : sent.fails.map(f => /proxy\/VPN\/firewall/.test(f.why) ? `HTTP ${f.status} from proxy/VPN` : f.why.slice(0, 50)).join(' / ');
-        setBadge('#f59e0b', `${icon} ${s.state}  ·  ⚠ not sent: ${short}  (click for details)`);
-        nextMs = Math.min(nextMs, 15000);   // retry soon
-      }
+      // After a failed send, try again at the next look (only our own server is contacted)
+      const due = force === true || !lastOk || Date.now() - lastSentAt >= SEND_EVERY_MS;
+      if (ON_VOTE_PAGE) {
+        const s = readVotePage();
+        // Rate limit is over but the page still shows the wait screen → reload it once
+        if (s.state === 'BLOCKED' && Date.now() >= s.unlockAt + 5000 && reloadOnce()) return;
+        if (s.changed || due) { lastSentAt = Date.now(); lastOk = await sendStatus(s); }
+      } else if (due) { lastSentAt = Date.now(); lastOk = await sendAlive(); }
     } catch (e) {
       setBadge('#f59e0b', '⚠ Vote Monitor error: ' + (e && e.message || e));
     } finally {
       busy = false;
-      timer = setTimeout(checkNow, nextMs);
     }
   }
 
-  checkNow();
+  setTimeout(look, 1500);                 // give the page a moment to fill in its numbers
+  setInterval(look, LOOK_EVERY_MS);
 })();

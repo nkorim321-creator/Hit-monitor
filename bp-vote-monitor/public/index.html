@@ -606,6 +606,11 @@
     $('earnNote').innerHTML = notes.map(esc).join('<br>');
   }
 
+  // How old a card's numbers are. The account script does not ask the site for anything; it reads the
+  // /vote page that is open in the ID's browser, so votes and balance are from when that page was loaded.
+  const readText = t => now() - t < 90000 ? '' : 'page read ' + ago(now() - t);
+  const readOld = t => now() - t > 30 * 60000;          // older than 30 minutes: shown in amber
+
   function cardHtml(a) {
     const s = statusOf(a);
     let timer;
@@ -630,7 +635,9 @@
       ? `Unlocks at ${fmtWhen(a.unlockAt - serverSkew)}`
       : s === 'READY' && a.unlockAt
       ? `Unlocked at ${fmtWhen(a.unlockAt - serverSkew)}`
-      : (a.rateLimitText ? `Limit ${esc(a.rateLimitText)}` : '');
+      : a.dataAt
+      ? `<span data-read="${a.dataAt}" class="${readOld(a.dataAt) ? 'soff' : ''}" title="The script reads the /vote page that is open in the ID's browser. Votes and balance are from the moment that page was loaded.">${readText(a.dataAt)}</span>`
+      : '';
     const footR = a.reported ? `<span data-seen="${a.lastSeen}">seen ${ago(now() - a.lastSeen)}</span>` : '';
     const del = team === 'ALL' && a.accountId ? ` · <a data-del="${esc(a.accountId)}" title="Remove this report">✕</a>` : '';
 
@@ -748,6 +755,10 @@
     }
     for (const el of document.querySelectorAll('[data-seen]')) el.textContent = 'seen ' + ago(now() - Number(el.dataset.seen));
     for (const el of document.querySelectorAll('[data-noreport]')) el.textContent = 'No report ' + ago(now() - Number(el.dataset.noreport));
+    for (const el of document.querySelectorAll('[data-read]')) {
+      const t = Number(el.dataset.read);
+      el.textContent = readText(t); el.classList.toggle('soff', readOld(t));
+    }
   }
 
   /* ── voice alerts ─────────────────────────────────────────

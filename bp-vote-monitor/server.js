@@ -1,7 +1,7 @@
 // BP Worker Vote Monitor — central server (no npm packages needed)
 // Run:  node server.js        (listens on ports 3100 and 80; change with PORTS=3100)
 //
-// - Account scripts POST their /vote status to /api/report (no password).
+// - Account scripts read the /vote page that is open in the browser and POST its status to /api/report (no password).
 // - The ID list (Serial, BP Year, Mail, Worker ID, Team name) comes from a Google Sheet.
 // - Each team sees only its own IDs with its own password; "ALL" is the admin password.
 //   Passwords live only on the server in passwords.json (scrypt hashes, never in git).
@@ -72,13 +72,19 @@ function saveEarn() {
     fs.writeFile(EARN_FILE + '.tmp', JSON.stringify(earn), err => { if (!err) fs.rename(EARN_FILE + '.tmp', EARN_FILE, () => {}); });
   }, 5000);
 }
-function trackHistory(mail, state, bal, unlockAt, now) {
+// The script of this mail reported just now: extend its "online" interval
+function trackOnline(mail, now) {
   const k = String(mail || '').trim().toUpperCase();
   if (!k) return;
-  // online intervals
   const on = earn.on[k] = earn.on[k] || [];
   const last = on[on.length - 1];
   if (last && now - last[1] <= ONLINE_GAP_MS) last[1] = now; else on.push([now, now]);
+  saveEarn();
+}
+function trackHistory(mail, state, bal, unlockAt, now) {
+  const k = String(mail || '').trim().toUpperCase();
+  if (!k) return;
+  trackOnline(mail, now);
   // state changes
   const st = earn.st[k] = earn.st[k] || [];
   const ls = st[st.length - 1];
@@ -248,7 +254,7 @@ setInterval(refreshSheet, SHEET_REFRESH_MS);
 
 /* ── build the list a viewer may see ─────────────────────── */
 const PUBLIC_FIELDS = ['state', 'totalBalanceCents', 'rateLimitText', 'unlockAt', 'lastUnlockAt', 'noticeText', 'waitText', 'waitUntil',
-                       'categories', 'totalAvailable', 'lastSeen'];
+                       'categories', 'totalAvailable', 'lastSeen', 'dataAt'];
 function view(scope, team) {
   const byMail = new Map();
   for (const a of Object.values(accounts)) {
@@ -288,17 +294,48 @@ const str = (v, max = 200) => (v == null ? '' : String(v).slice(0, max));
 const num = v => (v === null || v === undefined || v === '' || isNaN(Number(v)) ? null : Number(v));
 const STATES = ['RUNNING', 'BLOCKED', 'PAUSED', 'REVIEW', 'LOGGED_OUT', 'UNKNOWN'];
 
+// Answer to the account script: which sheet ID this is ("SUJON ID-9"), or null when the mail is not in the sheet.
+// v tells the script what this server understands (3 = heartbeats, data age).
+const SERVER_V = 3;
+function answer(email) {
+  const row = sheet.rows.find(r => norm(r.mail) === norm(email));
+  return { ok: true, v: SERVER_V, match: row ? { team: row.team, serial: row.serial } : null };
+}
+// The script is running but could not read a new status (other page than /vote, or an older /vote tab):
+// only "seen just now" is recorded, the status stays as it was.
+function stillOnline(acc, now) {
+  acc.lastSeen = now;
+  save();
+  trackOnline(acc.email, now);
+  return answer(acc.email);
+}
+
 function handleReport(b) {
   const id = str(b.id, 120).trim();
   if (!id) throw new Error('missing id');
   const now  = Date.now();
   const prev = accounts[id] || {};
+  if (b.heartbeat) return accounts[id] ? stillOnline(accounts[id], now) : { ok: true, v: SERVER_V, unknown: true };
+
+  // Since version 3 the script reads the open /vote page instead of fetching it, so its numbers have an age:
+  // the time since that page was loaded (or last changed by itself). Older scripts fetched fresh data: age 0.
+  const age = num(b.dataAgeSeconds);
+  let dataAt = age === null ? now : now - Math.max(0, age) * 1000;
+  // A second, older /vote tab of the same account must not overwrite what a newer page showed
+  // (it would also look like the balance going down and up again).
+  if (prev.dataAt && dataAt < prev.dataAt - 10000) return stillOnline(accounts[id], now);
+  // Same page as last time: keep the stored moment instead of a value that wobbles by a second per report
+  if (prev.dataAt && Math.abs(dataAt - prev.dataAt) < 10000) dataAt = prev.dataAt;
+
   let state = STATES.includes(b.state) ? b.state : 'UNKNOWN';
   const cats = Array.isArray(b.categories) ? b.categories : [];
   // Older scripts called any page without a rate limit "RUNNING", even a "Voting is paused" page.
   // A real running page always lists vote categories, so without them it is not trusted as running.
   if (state === 'RUNNING' && cats.length === 0) state = 'UNKNOWN';
+  // Seconds until the rate limit ends; zero or below when the limit is already over but the page was not reloaded yet
   const rateLimitSeconds = num(b.rateLimitSeconds), waitSeconds = num(b.waitSeconds);
+  let unlockAt = state === 'BLOCKED' && rateLimitSeconds !== null ? now + rateLimitSeconds * 1000 : null;
+  if (unlockAt && prev.unlockAt && Math.abs(unlockAt - prev.unlockAt) < 5000) unlockAt = prev.unlockAt;   // same block: no wobble
   const acc = {
     id,
     email: str(b.email) || prev.email || '',
@@ -308,10 +345,11 @@ function handleReport(b) {
     noticeText: str(b.noticeText, 200),
     waitText: str(b.waitText, 60),
     waitUntil: state === 'PAUSED' && waitSeconds ? now + waitSeconds * 1000 : null,
-    unlockAt: state === 'BLOCKED' && rateLimitSeconds ? now + rateLimitSeconds * 1000 : null,
+    unlockAt,
     categories: cats.slice(0, 20).map(c => ({ name: str(c && c.name, 60), count: num(c && c.count) || 0 })),
     totalAvailable: num(b.totalAvailable) || 0,
     lastSeen: now,
+    dataAt,
     // When a block ends, remember the unlock moment (for the 12-hour "Rest time" on the dashboard).
     // Use the site's unlock time if it is known and already passed, otherwise the time we saw the change.
     lastUnlockAt: prev.state === 'BLOCKED' && state !== 'BLOCKED'
@@ -321,9 +359,7 @@ function handleReport(b) {
   accounts[id] = acc;
   save();
   trackHistory(acc.email, state, acc.totalBalanceCents, acc.unlockAt, now);
-  // Tell the script which sheet ID this is, so its badge can show "SUJON ID-9" or "not in sheet"
-  const row = sheet.rows.find(r => norm(r.mail) === norm(acc.email));
-  return { ok: true, match: row ? { team: row.team, serial: row.serial } : null };
+  return answer(acc.email);
 }
 
 /* ── HTTP ────────────────────────────────────────────────── */
