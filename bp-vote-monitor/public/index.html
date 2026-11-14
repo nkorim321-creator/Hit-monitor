@@ -290,10 +290,12 @@
   const stale = a => a.reported && now() - a.lastSeen > OFFLINE_AFTER_MS;   // script (Chrome) not reporting
   function statusOf(a) {
     if (!a.reported) return 'NODATA';
-    // The unlock / pause end time comes from the site, so it stays true even when Chrome is closed
+    // The unlock time comes from the site, so it stays true even when Chrome is closed
     if (a.state === 'BLOCKED' && a.unlockAt) return a.unlockAt <= now() ? 'READY' : 'BLOCKED';
-    if (a.state === 'PAUSED' && a.waitUntil && a.waitUntil > now()) return 'PAUSED';
-    if (stale(a)) return 'OFFLINE';
+    // OFFLINE means: the ID was running and then its browser or internet went away.
+    // Review, paused, logged out … do not end because a browser was closed, so they keep their own
+    // label (the card is marked "script off" and shows how old its data is).
+    if (a.state === 'RUNNING' && stale(a)) return 'OFFLINE';
     return a.state || 'UNKNOWN';
   }
   const LABEL = { RUNNING: 'RUNNING', BLOCKED: 'BLOCKED', PAUSED: 'PAUSED', REVIEW: 'IN REVIEW', READY: 'UNLOCKED', OFFLINE: 'OFFLINE',
