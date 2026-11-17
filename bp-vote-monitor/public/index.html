@@ -33,13 +33,29 @@
   .team.active small { color: #c7d2fe; }
   .team.admin { border-style: dashed; }
 
-  .stats { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  /* 10 columns: the three two-part boxes take 2 each, the others 1 */
+  .stats { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .stat.combo { grid-column: span 2; }
   .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; cursor: pointer; min-width: 0; }
   .stat.static { cursor: default; }
   .stat.active { outline: 2px solid var(--blue); }
   .stat .n { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .stat .l { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  @media (max-width: 900px) { .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  .stat:not(.combo) .l { white-space: normal; }        /* small boxes: a long label wraps instead of being cut */
+  /* two-part box: a number above each word, total at the side */
+  .parts { display: flex; align-items: stretch; gap: 4px; }
+  .part { flex: 1 1 0; min-width: 0; border-radius: 6px; padding: 0 4px; margin: 0 -4px; }
+  .part[data-f]:hover { background: var(--panel2); }
+  .part.active { outline: 2px solid var(--blue); }
+  .part.tot { flex: 0 0 auto; border-left: 1px solid var(--line); border-radius: 0; padding-left: 10px; margin-left: 2px; }
+  .part.tot .n::before { content: '= '; color: var(--muted); font-weight: 400; }
+  @media (max-width: 1200px) {
+    /* 6 columns: IDs + Running/Unlocked, then Blocked + Offline, then the three small boxes */
+    .stats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .stat { grid-column: span 2; }
+    .stat.combo { grid-column: span 3; }
+    .stat.combo.wide { grid-column: span 4; }
+  }
 
   .serials { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
   .sgroup { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
@@ -168,8 +184,9 @@
     h1 { font-size: 16px; }
     .teams { gap: 6px; margin-top: 8px; }
     .team { padding: 6px 10px; font-size: 13px; }
-    .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+    .stats { gap: 6px; margin-top: 8px; }
     .stat { padding: 6px 8px; }
+    .part.tot { padding-left: 6px; }
     .stat .n { font-size: 16px; }
     .stat .l { font-size: 8px; letter-spacing: .2px; white-space: normal; }
     .tools input { min-width: 0; flex-basis: 100%; }
@@ -402,28 +419,41 @@
   }
 
   /* ── rendering ────────────────────────────────────────── */
+  // The three two-part boxes: which statuses each part counts
+  const PARTS = {
+    RUNNING: [['S:RUNNING', 'Running', 'var(--green)', s => s === 'RUNNING'],
+              ['S:READY', 'Unlocked', 'var(--blue)', s => s === 'READY']],
+    BLOCKED: [['S:BLOCKED', 'Blocked', 'var(--red)', s => s === 'BLOCKED'],
+              ['S:PAUSED', 'Paused', 'var(--orange)', s => s === 'PAUSED']],
+    // "Offline" here = browser closed, logged out, unknown page or no report yet
+    OFFLINE: [['S:OFFLINE', 'Offline', '#94a3b8', s => isOff(s) && s !== 'REVIEW'],
+              ['S:REVIEW', 'Review', '#a78bfa', s => s === 'REVIEW']],
+  };
+  const partTest = Object.fromEntries(Object.values(PARTS).flat().map(([f, , , test]) => [f, test]));
+  const PART_TIPS = { 'S:OFFLINE': 'Browser closed, logged out, unknown page or no report yet' };
+
   function renderStats() {
-    const c = { ALL: accounts.length, RUNNING: 0, BLOCKED: 0, OFFLINE: 0, REST: 0 };
-    let bal = 0, votes = 0;
+    const n = {}; let bal = 0, votes = 0, rest = 0;
     for (const a of accounts) {
       const s = statusOf(a);
-      if (isRun(s)) c.RUNNING++; else if (isStop(s)) c.BLOCKED++; else c.OFFLINE++;
-      if (restDone(a)) c.REST++;
+      for (const [f, test] of Object.entries(partTest)) if (test(s)) n[f] = (n[f] || 0) + 1;
+      if (restDone(a)) rest++;
       bal += a.totalBalanceCents || 0;
       if (s === 'RUNNING') votes += a.totalAvailable || 0;
     }
-    const items = [
-      ['ALL', c.ALL, 'IDs', ''],
-      ['RUNNING', c.RUNNING, 'Running / Unlocked', 'color:var(--green)'],
-      ['BLOCKED', c.BLOCKED, 'Blocked / Paused', 'color:var(--red)'],
-      ['OFFLINE', c.OFFLINE, 'Offline / Review', 'color:#94a3b8'],
-      ['REST', c.REST, 'Rest done (12h)', 'color:#2dd4bf'],
-      [null, money(bal), 'Total balance', ''],
-      [null, votes, 'Votes available', 'color:var(--blue)'],
-    ];
-    $('stats').innerHTML = items.map(([f, n, l, st]) =>
+    const one = (f, value, label, color) =>
       `<div class="stat ${f ? (f === filter ? 'active' : '') : 'static'}" ${f ? `data-f="${f}"` : ''}>
-         <div class="n" style="${st}">${esc(n)}</div><div class="l">${l}</div></div>`).join('');
+         <div class="n" style="${color ? 'color:' + color : ''}">${esc(value)}</div><div class="l">${label}</div></div>`;
+    const combo = (group, wide) => {
+      const parts = PARTS[group], total = parts.reduce((t, [f]) => t + (n[f] || 0), 0);
+      return `<div class="stat combo ${wide ? 'wide' : ''} ${filter === group ? 'active' : ''}" data-f="${group}" title="Click a number to see only those IDs, click the total to see all of them">
+        <div class="parts">${parts.map(([f, label, color]) =>
+          `<div class="part ${filter === f ? 'active' : ''}" data-f="${f}" ${PART_TIPS[f] ? `title="${PART_TIPS[f]}"` : ''}>
+             <div class="n" style="color:${color}">${n[f] || 0}</div><div class="l">${label}</div></div>`).join('')}
+          <div class="part tot"><div class="n">${total}</div><div class="l">Total</div></div></div></div>`;
+    };
+    $('stats').innerHTML = one('ALL', accounts.length, 'IDs') + combo('RUNNING', true) + combo('BLOCKED') + combo('OFFLINE') +
+      one('REST', rest, 'Rest done (12h)', '#2dd4bf') + one(null, money(bal), 'Total balance') + one(null, votes, 'Votes available', 'var(--blue)');
   }
 
   function renderSerials() {
@@ -689,6 +719,7 @@
       if (filter === 'RUNNING' && !isRun(s)) return false;
       if (filter === 'BLOCKED' && !isStop(s)) return false;
       if (filter === 'OFFLINE' && !isOff(s)) return false;
+      if (partTest[filter] && !partTest[filter](s)) return false;
       if (filter === 'REST' && !restDone(a)) return false;
       if (q && !`${a.mail} ${a.workerId} ${a.team} id-${a.serial} ${a.bpYear}`.toLowerCase().includes(q)) return false;
       return true;
